@@ -34,3 +34,6 @@ go build -o mds .
 
 Copyright 2026
 MIT
+
+## License
+MIT
