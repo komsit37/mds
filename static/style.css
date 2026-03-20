@@ -391,6 +391,56 @@ body {
   font-size: 0.9rem;
 }
 
+/* ── Commit History ── */
+.commit-list {
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.commit-item {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.1s;
+  -webkit-tap-highlight-color: transparent;
+}
+.commit-item:last-child { border-bottom: none; }
+.commit-item:hover { background: var(--bg-hover); }
+.commit-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.commit-hash {
+  font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
+  font-size: 0.8rem;
+  color: var(--accent);
+  background: var(--accent-bg);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+.commit-age {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+.commit-message {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.4;
+  word-break: break-word;
+}
+.commit-author {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+.commit-back {
+  margin-bottom: 12px;
+}
+
 /* ── Loading ── */
 .loading {
   text-align: center;

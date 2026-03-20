@@ -191,6 +191,7 @@ async function showView(path) {
     <div class="view-toolbar">
       <button class="tab active" id="tab-read" onclick="switchTab('read', '${encodeURIComponent(path)}')">📖 Read</button>
       <button class="tab" id="tab-diff" onclick="switchTab('diff', '${encodeURIComponent(path)}')">± Diff</button>
+      <button class="tab" id="tab-history" onclick="switchTab('history', '${encodeURIComponent(path)}')">🕘 History</button>
     </div>
     <div id="view-content"><div class="loading">Loading…</div></div>
   `;
@@ -206,6 +207,8 @@ async function switchTab(tab, encodedPath) {
 
   if (tab === 'read') {
     loadReadView(path);
+  } else if (tab === 'history') {
+    loadHistoryView(path);
   } else {
     loadDiffView(path);
   }
@@ -234,6 +237,58 @@ async function loadDiffView(path) {
     const res = await fetch('/api/diff?path=' + encodeURIComponent(path));
     const data = await res.json();
     content.innerHTML = renderDiff(data);
+  } catch (e) {
+    content.innerHTML = '<div class="loading">Error loading diff</div>';
+  }
+}
+
+// ── History View ──
+async function loadHistoryView(path) {
+  const content = document.getElementById('view-content');
+  content.innerHTML = '<div class="loading">Loading history…</div>';
+
+  try {
+    const res = await fetch('/api/history?path=' + encodeURIComponent(path));
+    const data = await res.json();
+    content.innerHTML = renderHistory(data, path);
+  } catch (e) {
+    content.innerHTML = '<div class="loading">Error loading history</div>';
+  }
+}
+
+function renderHistory(data, path) {
+  if (!data.commits || data.commits.length === 0) {
+    return '<div class="diff-empty">No git history for this file</div>';
+  }
+
+  let html = '<ul class="commit-list">';
+  for (const c of data.commits) {
+    html += `
+      <li class="commit-item" onclick="loadCommitDiff('${encodeURIComponent(path)}', '${c.hash}')">
+        <div class="commit-top">
+          <span class="commit-hash">${esc(c.shortHash)}</span>
+          <span class="commit-age">${esc(c.age)}</span>
+        </div>
+        <div class="commit-message">${esc(c.message)}</div>
+        <div class="commit-author">${esc(c.author)}</div>
+      </li>
+    `;
+  }
+  html += '</ul>';
+  return html;
+}
+
+async function loadCommitDiff(encodedPath, commitHash) {
+  const path = decodeURIComponent(encodedPath);
+  const content = document.getElementById('view-content');
+  content.innerHTML = '<div class="loading">Loading diff…</div>';
+
+  try {
+    const res = await fetch('/api/diff?path=' + encodeURIComponent(path) + '&commit=' + commitHash);
+    const data = await res.json();
+    let html = `<button class="btn commit-back" onclick="loadHistoryView('${esc(path)}')">← Back to history</button>`;
+    html += renderDiff(data);
+    content.innerHTML = html;
   } catch (e) {
     content.innerHTML = '<div class="loading">Error loading diff</div>';
   }

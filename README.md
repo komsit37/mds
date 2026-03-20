@@ -1,6 +1,6 @@
 # MDS — Markdown Spec Server
 
-A fast, simple markdown viewer for reading project specs from mobile.
+A fast, simple markdown viewer for reading project specs from web and mobile.
 
 ## Features
 - 📄 Browse all `.md` files in a project
@@ -23,3 +23,9 @@ A fast, simple markdown viewer for reading project specs from mobile.
 ## Roadmap
 - [ ] Multi-project support
 - [ ] Text search
+
+## Installation
+
+```bash
+go build -o mds .
+```
