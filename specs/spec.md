@@ -98,9 +98,9 @@ Returns raw markdown content of a file.
 - **400** if path is missing, absolute, or contains `..`
 - **404** if file doesn't exist
 
-### `GET /api/diff?path=<relative-path>`
+### `GET /api/diff?path=<relative-path>[&commit=<hash>]`
 
-Returns git diff for a file.
+Returns git diff for a file. If `commit` is provided, shows diff for that specific commit.
 
 **Response:**
 ```json
@@ -117,11 +117,48 @@ Returns git diff for a file.
 | `hasChanges` | bool | Whether diff content exists |
 | `label` | string | Human-readable description of what's shown |
 
-**Diff resolution order:**
+**Without `commit` param (default diff resolution):**
 1. `git diff HEAD -- <file>` → uncommitted changes (staged + unstaged vs HEAD)
 2. If empty: `git log -1` to find last commit that touched the file, then `git diff <commit>~1 <commit> -- <file>`
 3. If first commit: synthesize a diff showing entire file as additions
 4. If not a git repo: `label: "Not a git repository"`
+
+**With `commit` param:**
+1. Validate commit hash (hex characters only)
+2. `git diff <commit>~1 <commit> -- <file>` → diff for that specific commit
+3. If first commit: synthesize full-file addition diff
+4. Label includes commit message and relative age (e.g., `"add license section (2 hours ago)"`)
+
+### `GET /api/history?path=<relative-path>`
+
+Returns git commit history for a file (up to 50 commits, follows renames).
+
+**Response:**
+```json
+{
+  "commits": [
+    {
+      "hash": "729a54c31e66...",
+      "shortHash": "729a54c",
+      "message": "add copyright year",
+      "author": "pkomsit",
+      "date": 1710000000000,
+      "age": "2 hours ago"
+    }
+  ]
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `commits[].hash` | string | Full commit SHA |
+| `commits[].shortHash` | string | Abbreviated commit SHA |
+| `commits[].message` | string | Commit subject line |
+| `commits[].author` | string | Author name |
+| `commits[].date` | int64 | Unix milliseconds of commit date |
+| `commits[].age` | string | Human-readable relative time |
+
+Uses `git log --follow` to track file renames. NUL-delimited format for safe parsing.
 
 ## File Discovery
 
@@ -183,6 +220,7 @@ Two sections:
 **Mode toggle toolbar:**
 - `📖 Read` — rendered markdown (default)
 - `± Diff` — colorized unified diff
+- `🕘 History` — commit history list
 
 #### Read Mode
 - Markdown rendered client-side with `marked.js` (GFM enabled)
@@ -205,6 +243,14 @@ Two sections:
   - `diff`, `index`, `---`, `+++` metadata: muted bold
 - If no changes: centered "No changes" message
 - Monospace font, `pre-wrap` with `break-all` for mobile
+
+#### History Mode
+- Fetches from `/api/history?path=...`
+- Shows list of commits that touched this file (up to 50, follows renames)
+- Each entry: short hash (styled as code badge), commit message, author, relative time
+- Clicking a commit fetches `/api/diff?path=...&commit=<hash>` and shows colorized diff
+- "← Back to history" button above diff to return to the commit list
+- Commit list styled as bordered card list with hover states
 
 ## Styling
 
