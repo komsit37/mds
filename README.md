@@ -29,3 +29,6 @@ A fast, simple markdown viewer for reading project specs from web and mobile.
 ```bash
 go build -o mds .
 ```
+
+## License
+MIT
