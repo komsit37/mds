@@ -1,5 +1,5 @@
 // ── State ──
-let state = { project: '', files: [], isGit: false, filterChanged: false };
+let state = { project: '', files: [], isGit: false, filterChanged: false, showAll: false, recentLimit: 10 };
 
 // ── Init ──
 document.addEventListener('DOMContentLoaded', () => {
@@ -29,7 +29,8 @@ async function showFileList() {
   app.innerHTML = '<div class="loading">Loading…</div>';
 
   try {
-    const res = await fetch('/api/files');
+    const url = state.showAll ? '/api/files?all=true' : '/api/files';
+    const res = await fetch(url);
     const data = await res.json();
     state.project = data.project;
     state.files = data.files;
@@ -46,14 +47,18 @@ async function showFileList() {
 function renderFileList() {
   const app = document.getElementById('app');
   const files = state.filterChanged ? state.files.filter(f => f.changed) : state.files;
-  const recentFiles = files.slice(0, 20);
+  const recentFiles = files.slice(0, state.recentLimit);
+  const hasMore = files.length > state.recentLimit;
 
   let html = `
     <div class="header">
       <h1><a href="#/"><span class="icon">📄</span>${esc(state.project)}</a></h1>
       <div class="toolbar">
+        <button class="btn ${state.showAll ? 'active' : ''}" onclick="toggleAll()">
+          ${state.showAll ? '✓ All files' : '.md'}
+        </button>
         ${state.isGit ? `<button class="btn ${state.filterChanged ? 'active' : ''}" onclick="toggleFilter()">
-          ${state.filterChanged ? '✓ ' : ''}Changed only
+          ${state.filterChanged ? '✓ ' : ''}Changed
         </button>` : ''}
       </div>
     </div>
@@ -69,6 +74,9 @@ function renderFileList() {
       html += fileItemHTML(f);
     }
     html += '</ul>';
+    if (hasMore) {
+      html += `<button class="btn show-more" onclick="showMoreRecent()">Show more (${files.length - state.recentLimit} remaining)</button>`;
+    }
   }
 
   // File tree
@@ -97,6 +105,18 @@ function fileItemHTML(f) {
 
 function toggleFilter() {
   state.filterChanged = !state.filterChanged;
+  state.recentLimit = 10;
+  renderFileList();
+}
+
+function toggleAll() {
+  state.showAll = !state.showAll;
+  state.recentLimit = 10;
+  showFileList();
+}
+
+function showMoreRecent() {
+  state.recentLimit += 20;
   renderFileList();
 }
 
@@ -220,10 +240,25 @@ async function loadReadView(path) {
 
   try {
     const res = await fetch('/api/content?path=' + encodeURIComponent(path));
-    const md = await res.text();
-    content.innerHTML = '<div class="md-content">' + renderMarkdown(md) + '</div>';
-    highlightCode(content);
-    await renderMermaidBlocks(content);
+    const text = await res.text();
+    if (path.toLowerCase().endsWith('.md')) {
+      content.innerHTML = '<div class="md-content">' + renderMarkdown(text) + '</div>';
+      highlightCode(content);
+      await renderMermaidBlocks(content);
+    } else {
+      // Raw file — show as syntax-highlighted code block
+      const ext = path.split('.').pop().toLowerCase();
+      const langMap = { js: 'javascript', ts: 'typescript', py: 'python', sh: 'bash',
+        go: 'go', yaml: 'yaml', yml: 'yaml', json: 'json', sql: 'sql',
+        dockerfile: 'dockerfile', proto: 'protobuf', rb: 'ruby', rs: 'rust',
+        java: 'java', kt: 'kotlin', css: 'css', html: 'xml', xml: 'xml',
+        toml: 'toml', ini: 'ini', cfg: 'ini', mod: 'go', sum: 'plaintext' };
+      const lang = langMap[ext] || '';
+      const highlighted = lang && hljs.getLanguage(lang)
+        ? hljs.highlight(text, { language: lang }).value
+        : esc(text);
+      content.innerHTML = `<pre><code class="hljs language-${esc(lang)}">${highlighted}</code></pre>`;
+    }
   } catch (e) {
     content.innerHTML = '<div class="loading">Error loading file</div>';
   }

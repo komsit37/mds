@@ -2,6 +2,9 @@
 
 A fast, simple markdown viewer for reading project specs from web and mobile.
 
+## Ploblem
+when coding from mobile (via SSH), I usually use `mdv` to render markdown file in terminal. The font is too small and it's troublesome to find recent or changed files.
+
 ## Features
 - 📄 Browse all `.md` files in a project
 - 🔍 Recently changed files at the top
@@ -9,6 +12,7 @@ A fast, simple markdown viewer for reading project specs from web and mobile.
 - 📱 Mobile-first responsive design
 - 🌓 Dark/light mode (follows system)
 - ± Git diff view
+- Auto increment port number - easy to start instance in multiple projects
 
 ## Usage
 
@@ -19,10 +23,6 @@ A fast, simple markdown viewer for reading project specs from web and mobile.
 # Serve specific project
 ./mds /path/to/project
 ```
-
-## Roadmap
-- [ ] Multi-project support
-- [ ] Text search
 
 ## Installation
 

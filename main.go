@@ -83,10 +83,13 @@ func main() {
 	mux.HandleFunc("/api/diff", handleDiff)
 	mux.HandleFunc("/api/history", handleHistory)
 
-	// Serve static files from embedded FS
+	// Serve static files from embedded FS (no-cache for dev convenience)
 	staticSub, _ := fs.Sub(staticFS, "static")
 	fileServer := http.FileServer(http.FS(staticSub))
-	mux.Handle("/", fileServer)
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+		fileServer.ServeHTTP(w, r)
+	}))
 
 	// Auto port shifting
 	basePort := 8080
@@ -193,8 +196,8 @@ func getGitChangedFiles() map[string]bool {
 	return changed
 }
 
-// listMDFiles scans for .md files respecting .gitignore
-func listMDFiles() ([]FileInfo, bool) {
+// listFiles scans for files respecting .gitignore. If mdOnly is true, only .md files are returned.
+func listFiles(mdOnly bool) ([]FileInfo, bool) {
 	isGit := isGitRepo()
 	changedFiles := make(map[string]bool)
 	if isGit {
@@ -203,19 +206,29 @@ func listMDFiles() ([]FileInfo, bool) {
 
 	var files []FileInfo
 
+	isMD := func(name string) bool {
+		return strings.HasSuffix(strings.ToLower(name), ".md")
+	}
+
 	if isGit {
 		// Use git ls-files for tracked files
-		cmd := exec.Command("git", "ls-files", "--full-name", "*.md", "**/*.md")
+		args := []string{"ls-files", "--full-name"}
+		if mdOnly {
+			args = append(args, "*.md", "**/*.md")
+		}
+		cmd := exec.Command("git", args...)
 		cmd.Dir = projectDir
 		out, _ := cmd.Output()
 
 		seen := make(map[string]bool)
 		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 			line = strings.TrimSpace(line)
-			if line == "" || !strings.HasSuffix(strings.ToLower(line), ".md") {
+			if line == "" {
 				continue
 			}
-			// Make path relative to projectDir
+			if mdOnly && !isMD(line) {
+				continue
+			}
 			seen[line] = true
 			fi := fileInfoFromPath(line, changedFiles)
 			if fi != nil {
@@ -223,13 +236,20 @@ func listMDFiles() ([]FileInfo, bool) {
 			}
 		}
 
-		// Also include untracked but not ignored .md files
-		cmd = exec.Command("git", "ls-files", "--others", "--exclude-standard", "*.md", "**/*.md")
+		// Also include untracked but not ignored files
+		args = []string{"ls-files", "--others", "--exclude-standard"}
+		if mdOnly {
+			args = append(args, "*.md", "**/*.md")
+		}
+		cmd = exec.Command("git", args...)
 		cmd.Dir = projectDir
 		out, _ = cmd.Output()
 		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 			line = strings.TrimSpace(line)
-			if line == "" || !strings.HasSuffix(strings.ToLower(line), ".md") {
+			if line == "" {
+				continue
+			}
+			if mdOnly && !isMD(line) {
 				continue
 			}
 			if !seen[line] {
@@ -245,7 +265,6 @@ func listMDFiles() ([]FileInfo, bool) {
 			if err != nil {
 				return nil
 			}
-			// Skip common junk directories
 			if d.IsDir() {
 				name := d.Name()
 				if name == "node_modules" || name == "vendor" || name == ".git" || name == "__pycache__" {
@@ -253,7 +272,7 @@ func listMDFiles() ([]FileInfo, bool) {
 				}
 				return nil
 			}
-			if !strings.HasSuffix(strings.ToLower(d.Name()), ".md") {
+			if mdOnly && !isMD(d.Name()) {
 				return nil
 			}
 			rel, err := filepath.Rel(projectDir, path)
@@ -292,7 +311,8 @@ func fileInfoFromPath(relPath string, changedFiles map[string]bool) *FileInfo {
 }
 
 func handleFiles(w http.ResponseWriter, r *http.Request) {
-	files, isGit := listMDFiles()
+	mdOnly := r.URL.Query().Get("all") != "true"
+	files, isGit := listFiles(mdOnly)
 	if files == nil {
 		files = []FileInfo{}
 	}

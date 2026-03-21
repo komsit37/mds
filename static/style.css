@@ -173,6 +173,15 @@ body {
   color: var(--badge-changed);
 }
 
+.show-more {
+  display: block;
+  width: 100%;
+  text-align: center;
+  margin-top: 4px;
+  padding: 10px;
+  color: var(--text-secondary);
+}
+
 /* ── File Tree ── */
 .tree-dir {
   margin: 0;
