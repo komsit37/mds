@@ -1,43 +1,50 @@
 # MDS — Markdown Spec Server
 
-A fast, simple markdown viewer for reading project specs from web and mobile.
+A single-binary markdown viewer for browsing project specs from your phone.
 
-## Ploblem
-when coding from mobile (via SSH), I usually use `mdv` to render markdown file in terminal. The font is too small and it's troublesome to find recent or changed files.
+## Problem
+
+You develop with AI on a remote server. Specs, design docs, and SKILL files are scattered across directories. When you check from your phone:
+
+- **Can't find anything** — which file changed? where's the latest spec?
+- **Can't read anything** — raw markdown in a terminal on a 6-inch screen
+- **Can't see diagrams** — Mermaid blocks are just text
+- **Can't see what changed** — no quick way to view diffs
+
+MDS fixes this. One command, instant web UI.
+
+![LIST](attachments/README_20260322_02.jpg)
+![READ](attachments/README_20260322_03.jpg)
 
 ## Features
-- 📄 Browse all `.md` files in a project
-- 🔍 Recently changed files at the top
-- 🎨 Mermaid diagrams, syntax highlighting
+
+- 📄 Browse all files in a project (`.md` default, toggle to show all)
+- 🔍 Recently changed files first, with **M** badge for uncommitted changes
+- 🎨 Mermaid diagrams rendered, code syntax highlighted
+- ± Git diff view — uncommitted changes or per-commit history
 - 📱 Mobile-first responsive design
 - 🌓 Dark/light mode (follows system)
-- ± Git diff view
-- Auto increment port number - easy to start instance in multiple projects
+- 🔌 Auto port shifting — run multiple instances, one per project
 
 ## Usage
 
 ```bash
 # Serve current directory
-./mds
+mds
 
-# Serve specific project
-./mds /path/to/project
+# Serve a specific project
+mds /path/to/project
 ```
 
-## Installation
+Opens your browser automatically. Access from mobile via Tailscale.
+
+## Install
 
 ```bash
 go build -o mds .
+cp mds ~/bin/  # or anywhere in your PATH
 ```
 
 ## License
 
-Copyright 2026
-
-Copyright 2026
-MIT
-
-## License
-
-Copyright 2026
 MIT
