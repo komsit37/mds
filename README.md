@@ -13,9 +13,6 @@ You develop with AI on a remote server. Specs, design docs, and SKILL files are 
 
 MDS fixes this. One command, instant web UI.
 
-![LIST](attachments/README_20260322_02.jpg)
-![READ](attachments/README_20260322_03.jpg)
-
 ## Features
 
 - 📄 Browse all files in a project (`.md` default, toggle to show all)
@@ -25,6 +22,16 @@ MDS fixes this. One command, instant web UI.
 - 📱 Mobile-first responsive design
 - 🌓 Dark/light mode (follows system)
 - 🔌 Auto port shifting — run multiple instances, one per project
+
+##### File list
+![LIST](attachments/README_20260322_02.jpg)
+
+##### Viewer
+![READ](attachments/README_20260322_03.jpg)
+
+##### Diff View
+![README](attachments/README_20260322_04.jpg)
+
 
 ## Usage
 

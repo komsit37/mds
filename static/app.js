@@ -1,12 +1,65 @@
 // ── State ──
 let state = { project: '', files: [], isGit: false, filterChanged: false, showAll: false, recentLimit: 10 };
 
+// ── Theme ──
+// Modes: 'auto' (follow system), 'light', 'dark'
+function getThemePref() {
+  return localStorage.getItem('mds-theme') || 'auto';
+}
+
+function isDark() {
+  const pref = getThemePref();
+  if (pref === 'dark') return true;
+  if (pref === 'light') return false;
+  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+function applyTheme() {
+  const pref = getThemePref();
+  const root = document.documentElement;
+  if (pref === 'auto') {
+    root.removeAttribute('data-theme');
+  } else {
+    root.setAttribute('data-theme', pref);
+  }
+  // Highlight.js theme
+  const hljsLink = document.getElementById('hljs-theme');
+  if (hljsLink) {
+    hljsLink.href = isDark() ? '/vendor/highlight-dark.min.css' : '/vendor/highlight-light.min.css';
+  }
+}
+
+function cycleTheme() {
+  const order = ['auto', 'light', 'dark'];
+  const cur = getThemePref();
+  const next = order[(order.indexOf(cur) + 1) % order.length];
+  localStorage.setItem('mds-theme', next);
+  applyTheme();
+  // Re-init mermaid with correct theme
+  mermaid.initialize({ startOnLoad: false, theme: isDark() ? 'dark' : 'default', securityLevel: 'loose' });
+  // Update toggle button icon
+  const btn = document.getElementById('theme-btn');
+  if (btn) btn.textContent = themeIcon();
+}
+
+function themeIcon() {
+  const pref = getThemePref();
+  if (pref === 'light') return '☀️';
+  if (pref === 'dark') return '🌙';
+  return '◐';
+}
+
 // ── Init ──
 document.addEventListener('DOMContentLoaded', () => {
+  applyTheme();
   mermaid.initialize({
     startOnLoad: false,
-    theme: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'default',
+    theme: isDark() ? 'dark' : 'default',
     securityLevel: 'loose',
+  });
+  // Re-apply theme when system preference changes (for auto mode)
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (getThemePref() === 'auto') applyTheme();
   });
   route();
   window.addEventListener('hashchange', route);
@@ -60,6 +113,7 @@ function renderFileList() {
         ${state.isGit ? `<button class="btn ${state.filterChanged ? 'active' : ''}" onclick="toggleFilter()">
           ${state.filterChanged ? '✓ ' : ''}Changed
         </button>` : ''}
+        <button class="theme-toggle" id="theme-btn" onclick="cycleTheme()" title="Toggle theme">${themeIcon()}</button>
       </div>
     </div>
   `;
@@ -206,6 +260,7 @@ async function showView(path) {
   let html = `
     <div class="header">
       <h1><a href="#/">📄 ${esc(state.project || 'Home')}</a></h1>
+      <button class="theme-toggle" id="theme-btn" onclick="cycleTheme()" title="Toggle theme">${themeIcon()}</button>
     </div>
     <div class="breadcrumb">${breadcrumb}</div>
     <div class="view-toolbar">
