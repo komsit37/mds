@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -109,9 +110,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	url := fmt.Sprintf("http://localhost:%d", port)
 	fmt.Printf("📄 mds — serving specs for [%s]\n", projectName)
 	fmt.Printf("   %s\n", projectDir)
-	fmt.Printf("   http://localhost:%d\n", port)
+	fmt.Printf("   %s\n", url)
+
+	// Auto-open browser if available (non-blocking)
+	go openBrowser(url)
 
 	if err := http.Serve(listener, mux); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -564,6 +569,26 @@ func handleHistory(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// openBrowser tries to open the URL in the default browser. Silently fails if unavailable.
+func openBrowser(url string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "linux":
+		// Skip if no DISPLAY/WAYLAND (headless server)
+		if os.Getenv("DISPLAY") == "" && os.Getenv("WAYLAND_DISPLAY") == "" {
+			return
+		}
+		cmd = exec.Command("xdg-open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	default:
+		return
+	}
+	cmd.Start()
 }
 
 func init() {
