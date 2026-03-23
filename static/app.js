@@ -1,5 +1,6 @@
 // ── State ──
-let state = { project: '', files: [], isGit: false, filterChanged: false, showAll: false, recentLimit: 10 };
+let state = { project: '', files: [], isGit: false, filterChanged: false, showAll: false, recentLimit: 10,
+  sidebarOpen: false, sidebarTab: 'related', relatedCache: null, historyCache: null, currentPath: '' };
 
 // ── Theme ──
 // Modes: 'auto' (follow system), 'light', 'dark'
@@ -61,6 +62,15 @@ document.addEventListener('DOMContentLoaded', () => {
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     if (getThemePref() === 'auto') applyTheme();
   });
+  
+  // Restore sidebar state (default open on wide screens)
+  const sidebarState = localStorage.getItem('mds-sidebar');
+  if (sidebarState !== null) {
+    state.sidebarOpen = sidebarState === 'open';
+  } else {
+    state.sidebarOpen = window.innerWidth >= 1024;
+  }
+  
   route();
   window.addEventListener('hashchange', route);
 });
@@ -128,6 +138,7 @@ function renderFileList() {
   const app = document.getElementById('app');
   const files = state.filterChanged ? state.files.filter(f => f.changed) : state.files;
   const recentFiles = files.slice(0, state.recentLimit);
+  const hasMore = files.length > state.recentLimit;
 
   let html = `
     <div class="header">
@@ -155,6 +166,9 @@ function renderFileList() {
       html += fileItemHTML(f);
     }
     html += '</ul>';
+    if (hasMore) {
+      html += `<button class="btn show-more" onclick="showMoreRecent()">Show more (${files.length - state.recentLimit} remaining)</button>`;
+    }
   }
   html += '</div>';
 
@@ -297,22 +311,58 @@ async function showView(path) {
     }
   }
 
+  // Sidebar toggle button state
+  const toggleBtn = state.sidebarOpen ? '✕' : '☰';
+
   let html = `
     <div class="header">
       <h1><a href="#/">📄 ${esc(state.project || 'Home')}</a></h1>
       <button class="theme-toggle" id="theme-btn" onclick="cycleTheme()" title="Toggle theme">${themeIcon()}</button>
     </div>
-    <div class="breadcrumb">${breadcrumb}</div>
-    <div class="view-toolbar">
-      <button class="tab active" id="tab-read" onclick="switchTab('read', '${encodeURIComponent(path)}')">📖 Read</button>
-      <button class="tab" id="tab-diff" onclick="switchTab('diff', '${encodeURIComponent(path)}')">± Diff</button>
-      <button class="tab" id="tab-history" onclick="switchTab('history', '${encodeURIComponent(path)}')">🕘 History</button>
+    <div class="breadcrumb">
+      <button class="sidebar-toggle" id="sidebar-toggle" onclick="toggleSidebar()">${toggleBtn}</button>
+      ${breadcrumb}
     </div>
-    <div id="view-content"><div class="loading">Loading…</div></div>
+    <div class="view-layout">
+      <div class="view-sidebar" id="view-sidebar" style="${state.sidebarOpen ? '' : 'display:none'}">
+        <div class="sidebar-tabs">
+          <button class="tab ${state.sidebarTab === 'related' ? 'active' : ''}" onclick="switchSidebarTab('related')">Related</button>
+          <button class="tab ${state.sidebarTab === 'history' ? 'active' : ''}" onclick="switchSidebarTab('history')">History</button>
+        </div>
+        <div id="sidebar-content"></div>
+      </div>
+      <div class="view-main">
+        <div class="view-toolbar">
+          <button class="tab active" id="tab-read" onclick="switchTab('read', '${encodeURIComponent(path)}')">📖 Read</button>
+          <button class="tab" id="tab-diff" onclick="switchTab('diff', '${encodeURIComponent(path)}')">± Diff</button>
+        </div>
+        <div id="view-content"><div class="loading">Loading…</div></div>
+      </div>
+    </div>
   `;
   app.innerHTML = html;
 
+  // Add backdrop for mobile if sidebar is open
+  if (state.sidebarOpen && window.innerWidth < 768) {
+    addBackdrop();
+  }
+
+  // Clear caches on navigation
+  state.relatedCache = null;
+  state.historyCache = null;
+  state.currentPath = path;
+
+  // Load content
   loadReadView(path);
+
+  // If sidebar is open, fetch the active tab content
+  if (state.sidebarOpen) {
+    if (state.sidebarTab === 'related') {
+      fetchRelated(path);
+    } else {
+      fetchHistory(path);
+    }
+  }
 }
 
 async function switchTab(tab, encodedPath) {
@@ -322,10 +372,198 @@ async function switchTab(tab, encodedPath) {
 
   if (tab === 'read') {
     loadReadView(path);
-  } else if (tab === 'history') {
-    loadHistoryView(path);
   } else {
     loadDiffView(path);
+  }
+}
+
+// ── Sidebar Toggle ──
+function toggleSidebar() {
+  state.sidebarOpen = !state.sidebarOpen;
+  localStorage.setItem('mds-sidebar', state.sidebarOpen ? 'open' : 'closed');
+  
+  const sidebar = document.getElementById('view-sidebar');
+  const toggleBtn = document.getElementById('sidebar-toggle');
+  
+  if (state.sidebarOpen) {
+    sidebar.style.display = 'block';
+    toggleBtn.textContent = '✕';
+    // Add backdrop for mobile
+    if (window.innerWidth < 768) {
+      addBackdrop();
+    }
+    // Fetch content for active tab
+    if (state.sidebarTab === 'related') {
+      fetchRelated(state.currentPath);
+    } else {
+      fetchHistory(state.currentPath);
+    }
+  } else {
+    sidebar.style.display = 'none';
+    toggleBtn.textContent = '☰';
+    // Remove backdrop
+    const backdrop = document.querySelector('.sidebar-backdrop');
+    if (backdrop) backdrop.remove();
+  }
+}
+
+function addBackdrop() {
+  const sidebar = document.getElementById('view-sidebar');
+  if (sidebar) {
+    const backdrop = document.createElement('div');
+    backdrop.className = 'sidebar-backdrop';
+    backdrop.onclick = function() {
+      toggleSidebar();
+    };
+    sidebar.after(backdrop);
+  }
+}
+
+// ── Sidebar Tabs ──
+function switchSidebarTab(tab) {
+  state.sidebarTab = tab;
+  
+  const tabs = document.querySelectorAll('.sidebar-tabs .tab');
+  tabs.forEach(t => t.classList.remove('active'));
+  // Find the tab button by onclick attribute
+  const activeTabBtn = Array.from(tabs).find(t => t.getAttribute('onclick') && t.getAttribute('onclick').includes("'" + tab + "'"));
+  if (activeTabBtn) activeTabBtn.classList.add('active');
+  
+  const content = document.getElementById('sidebar-content');
+  
+  if (tab === 'related') {
+    if (state.relatedCache) {
+      content.innerHTML = renderRelated(state.relatedCache);
+    } else {
+      content.innerHTML = '<div class="loading">Loading…</div>';
+      fetchRelated(state.currentPath);
+    }
+  } else if (tab === 'history') {
+    if (state.historyCache) {
+      content.innerHTML = renderHistorySidebar(state.historyCache);
+    } else {
+      content.innerHTML = '<div class="loading">Loading…</div>';
+      fetchHistory(state.currentPath);
+    }
+  }
+}
+
+// ── Related Files ──
+async function fetchRelated(path) {
+  try {
+    const res = await fetch('/api/related?path=' + encodeURIComponent(path));
+    const data = await res.json();
+    state.relatedCache = data;
+    const content = document.getElementById('sidebar-content');
+    if (state.sidebarTab === 'related') {
+      content.innerHTML = renderRelated(data);
+    }
+  } catch (e) {
+    console.warn('Error loading related files:', e);
+  }
+}
+
+function renderRelated(data) {
+  const files = data.related || [];
+  if (files.length === 0) {
+    return '<div class="sidebar-empty">No related files</div>';
+  }
+  
+  let html = '';
+  
+  // Group by primary signal (signals is an array)
+  const linked = files.filter(f => f.signals && f.signals.includes('linked'));
+  const similar = files.filter(f => f.signals && f.signals.includes('similar') && !f.signals.includes('linked'));
+  const nearby = files.filter(f => !f.signals || (!f.signals.includes('linked') && !f.signals.includes('similar')));
+  
+  if (linked.length > 0) {
+    html += '<div class="sidebar-section-title">Linked</div>';
+    for (const f of linked) {
+      html += sidebarItemHTML(f);
+    }
+  }
+  
+  if (similar.length > 0) {
+    html += '<div class="sidebar-section-title">Similar</div>';
+    for (const f of similar) {
+      html += sidebarItemHTML(f);
+    }
+  }
+  
+  if (nearby.length > 0) {
+    html += '<div class="sidebar-section-title">Nearby</div>';
+    for (const f of nearby) {
+      html += sidebarItemHTML(f);
+    }
+  }
+  
+  return html;
+}
+
+function sidebarItemHTML(file) {
+  const dir = file.dir === '.' ? '' : file.dir + '/';
+  return `
+    <div class="sidebar-item" onclick="location.hash='#/view/${encodeURIComponent(file.path)}'">
+      <div class="file-name">${esc(file.name)}</div>
+      <div class="file-dir">${esc(dir)}</div>
+    </div>
+  `;
+}
+
+// ── History Sidebar ──
+async function fetchHistory(path) {
+  try {
+    const res = await fetch('/api/history?path=' + encodeURIComponent(path));
+    const data = await res.json();
+    state.historyCache = data;
+    const content = document.getElementById('sidebar-content');
+    if (state.sidebarTab === 'history') {
+      content.innerHTML = renderHistorySidebar(data);
+    }
+  } catch (e) {
+    console.warn('Error loading history:', e);
+  }
+}
+
+function renderHistorySidebar(data) {
+  if (!data.commits || data.commits.length === 0) {
+    return '<div class="sidebar-empty">No git history for this file</div>';
+  }
+  
+  let html = '<ul class="commit-list">';
+  for (const c of data.commits) {
+    html += `
+      <li class="commit-item" onclick="loadCommitDiffFromSidebar('${encodeURIComponent(state.currentPath)}', '${c.hash}')">
+        <div class="commit-top">
+          <span class="commit-hash">${esc(c.shortHash)}</span>
+          <span class="commit-age">${esc(c.age)}</span>
+        </div>
+        <div class="commit-message">${esc(c.message)}</div>
+        <div class="commit-author">${esc(c.author)}</div>
+      </li>
+    `;
+  }
+  html += '</ul>';
+  return html;
+}
+
+async function loadCommitDiffFromSidebar(encodedPath, commitHash) {
+  const path = decodeURIComponent(encodedPath);
+  const content = document.getElementById('view-content');
+  content.innerHTML = '<div class="loading">Loading diff…</div>';
+  
+  // Switch to diff tab
+  document.querySelectorAll('.view-toolbar .tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-diff').classList.add('active');
+  
+  try {
+    const res = await fetch('/api/diff?path=' + encodeURIComponent(path) + '&commit=' + commitHash);
+    const data = await res.json();
+    let html = `<button class="btn commit-back" onclick="switchSidebarTab('history')">← Back to history</button>`;
+    html += renderDiff(data);
+    content.innerHTML = html;
+  } catch (e) {
+    content.innerHTML = '<div class="loading">Error loading diff</div>';
   }
 }
 
@@ -367,58 +605,6 @@ async function loadDiffView(path) {
     const res = await fetch('/api/diff?path=' + encodeURIComponent(path));
     const data = await res.json();
     content.innerHTML = renderDiff(data);
-  } catch (e) {
-    content.innerHTML = '<div class="loading">Error loading diff</div>';
-  }
-}
-
-// ── History View ──
-async function loadHistoryView(path) {
-  const content = document.getElementById('view-content');
-  content.innerHTML = '<div class="loading">Loading history…</div>';
-
-  try {
-    const res = await fetch('/api/history?path=' + encodeURIComponent(path));
-    const data = await res.json();
-    content.innerHTML = renderHistory(data, path);
-  } catch (e) {
-    content.innerHTML = '<div class="loading">Error loading history</div>';
-  }
-}
-
-function renderHistory(data, path) {
-  if (!data.commits || data.commits.length === 0) {
-    return '<div class="diff-empty">No git history for this file</div>';
-  }
-
-  let html = '<ul class="commit-list">';
-  for (const c of data.commits) {
-    html += `
-      <li class="commit-item" onclick="loadCommitDiff('${encodeURIComponent(path)}', '${c.hash}')">
-        <div class="commit-top">
-          <span class="commit-hash">${esc(c.shortHash)}</span>
-          <span class="commit-age">${esc(c.age)}</span>
-        </div>
-        <div class="commit-message">${esc(c.message)}</div>
-        <div class="commit-author">${esc(c.author)}</div>
-      </li>
-    `;
-  }
-  html += '</ul>';
-  return html;
-}
-
-async function loadCommitDiff(encodedPath, commitHash) {
-  const path = decodeURIComponent(encodedPath);
-  const content = document.getElementById('view-content');
-  content.innerHTML = '<div class="loading">Loading diff…</div>';
-
-  try {
-    const res = await fetch('/api/diff?path=' + encodeURIComponent(path) + '&commit=' + commitHash);
-    const data = await res.json();
-    let html = `<button class="btn commit-back" onclick="loadHistoryView('${esc(path)}')">← Back to history</button>`;
-    html += renderDiff(data);
-    content.innerHTML = html;
   } catch (e) {
     content.innerHTML = '<div class="loading">Error loading diff</div>';
   }

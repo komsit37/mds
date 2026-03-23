@@ -52,6 +52,18 @@ type HistoryResponse struct {
 	Commits []CommitInfo `json:"commits"`
 }
 
+type RelatedFile struct {
+	Path    string   `json:"path"`
+	Name    string   `json:"name"`
+	Dir     string   `json:"dir"`
+	Score   float64  `json:"score"`
+	Signals []string `json:"signals"`
+}
+
+type RelatedResponse struct {
+	Related []RelatedFile `json:"related"`
+}
+
 var projectDir string
 var projectName string
 
@@ -83,6 +95,7 @@ func main() {
 	mux.HandleFunc("/api/content", handleContent)
 	mux.HandleFunc("/api/diff", handleDiff)
 	mux.HandleFunc("/api/history", handleHistory)
+	mux.HandleFunc("/api/related", handleRelated)
 
 	// Serve static files from embedded FS (no-cache for dev convenience)
 	staticSub, _ := fs.Sub(staticFS, "static")
@@ -589,6 +602,388 @@ func openBrowser(url string) {
 		return
 	}
 	cmd.Start()
+}
+
+// handleRelated returns files related to the given file
+func handleRelated(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		http.Error(w, "missing path parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Sanitize path to prevent directory traversal
+	cleanPath := filepath.Clean(path)
+	if strings.HasPrefix(cleanPath, "..") || filepath.IsAbs(cleanPath) {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+
+	// Get all .md files
+	allFiles, _ := listFiles(true)
+	if allFiles == nil {
+		allFiles = []FileInfo{}
+	}
+
+	// Read the content of the current file
+	absPath := filepath.Join(projectDir, cleanPath)
+	content, err := os.ReadFile(absPath)
+	if err != nil {
+		http.Error(w, "file not found", http.StatusNotFound)
+		return
+	}
+
+	// Parse current file's links and headings
+	currentLinks := parseMarkdownLinks(string(content))
+	currentHeadings := extractHeadings(string(content))
+	currentDir := filepath.Dir(cleanPath)
+
+	// Build a map of all .md file paths for quick lookup
+	mdPaths := make(map[string]bool)
+	for _, f := range allFiles {
+		mdPaths[f.Path] = true
+	}
+
+	// Calculate scores for all other .md files
+	type scoredFile struct {
+		file  RelatedFile
+		score float64
+	}
+	var scored []scoredFile
+
+	for _, f := range allFiles {
+		if f.Path == cleanPath {
+			continue
+		}
+
+		// Read content for this file
+		absOtherPath := filepath.Join(projectDir, f.Path)
+		otherContent, err := os.ReadFile(absOtherPath)
+		if err != nil {
+			continue
+		}
+
+		otherLinks := parseMarkdownLinks(string(otherContent))
+		otherHeadings := extractHeadings(string(otherContent))
+
+		// Signal 1: Cross-references (weight 0.45)
+		linkScore := 0.0
+		signals := []string{}
+
+		// Check if current file links to this file
+		currentLinksToOther := false
+		for _, link := range currentLinks {
+			resolved := resolveRelativeLink(link, filepath.Dir(cleanPath))
+			if resolved == f.Path {
+				currentLinksToOther = true
+				break
+			}
+		}
+
+		// Check if this file links to current file
+		otherLinksToCurrent := false
+		for _, link := range otherLinks {
+			resolved := resolveRelativeLink(link, filepath.Dir(f.Path))
+			if resolved == cleanPath {
+				otherLinksToCurrent = true
+				break
+			}
+		}
+
+		if currentLinksToOther && otherLinksToCurrent {
+			linkScore = 1.0
+			signals = append(signals, "linked")
+		} else if currentLinksToOther {
+			linkScore = 1.0
+			signals = append(signals, "linked")
+		} else if otherLinksToCurrent {
+			linkScore = 0.8
+			signals = append(signals, "linked")
+		}
+
+		// Signal 2: Heading-term overlap (weight 0.30)
+		headingSim := computeHeadingSimilarity(currentHeadings, otherHeadings, f.Name)
+		if headingSim > 0.1 {
+			signals = append(signals, "similar")
+		}
+
+		// Signal 3: Directory proximity (weight 0.25)
+		dirProximity := computeDirProximity(currentDir, filepath.Dir(f.Path))
+		if dirProximity >= 0.4 {
+			signals = append(signals, "nearby")
+		}
+
+		// Final score
+		finalScore := 0.45*linkScore + 0.30*headingSim + 0.25*dirProximity
+
+		if finalScore > 0.05 {
+			scored = append(scored, scoredFile{
+				file: RelatedFile{
+					Path:    f.Path,
+					Name:    f.Name,
+					Dir:     f.Dir,
+					Score:   finalScore,
+					Signals: signals,
+				},
+				score: finalScore,
+			})
+		}
+	}
+
+	// Sort by score descending
+	sort.Slice(scored, func(i, j int) bool {
+		return scored[i].score > scored[j].score
+	})
+
+	// Take top 8
+	if len(scored) > 8 {
+		scored = scored[:8]
+	}
+
+	// Build response
+	related := make([]RelatedFile, len(scored))
+	for i, s := range scored {
+		related[i] = s.file
+	}
+
+	resp := RelatedResponse{
+		Related: related,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// parseMarkdownLinks extracts links from markdown content: [text](path) and [text]: path
+func parseMarkdownLinks(content string) []string {
+	var links []string
+
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		// Find [text](path) inline link patterns
+		i := 0
+		for i < len(line) {
+			// Find opening [
+			ob := strings.Index(line[i:], "[")
+			if ob == -1 {
+				break
+			}
+			ob += i
+
+			// Find closing ]
+			cb := strings.Index(line[ob+1:], "]")
+			if cb == -1 {
+				break
+			}
+			cb += ob + 1
+
+			// Must be immediately followed by (
+			if cb+1 >= len(line) || line[cb+1] != '(' {
+				i = cb + 1
+				continue
+			}
+
+			// Find closing )
+			cp := strings.Index(line[cb+2:], ")")
+			if cp == -1 {
+				i = cb + 2
+				continue
+			}
+			cp += cb + 2
+
+			linkPath := strings.TrimSpace(line[cb+2 : cp])
+			if linkPath != "" {
+				links = append(links, linkPath)
+			}
+			i = cp + 1
+		}
+
+		// Reference-style links: [text]: path
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "[") {
+			if cb := strings.Index(trimmed, "]:"); cb > 0 {
+				linkPath := strings.TrimSpace(trimmed[cb+2:])
+				if linkPath != "" {
+					links = append(links, linkPath)
+				}
+			}
+		}
+	}
+
+	return links
+}
+
+// extractHeadings extracts H1-H3 headings from markdown content
+func extractHeadings(content string) []string {
+	var headings []string
+
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		// Check for H1, H2, or H3 headings
+		if strings.HasPrefix(trimmed, "### ") {
+			headings = append(headings, strings.TrimPrefix(trimmed, "### "))
+		} else if strings.HasPrefix(trimmed, "## ") {
+			headings = append(headings, strings.TrimPrefix(trimmed, "## "))
+		} else if strings.HasPrefix(trimmed, "# ") {
+			headings = append(headings, strings.TrimPrefix(trimmed, "# "))
+		}
+	}
+
+	return headings
+}
+
+// resolveRelativeLink resolves a relative link path against a base directory
+func resolveRelativeLink(link, baseDir string) string {
+	// Strip fragment anchors (e.g., "file.md#section" → "file.md")
+	if idx := strings.Index(link, "#"); idx != -1 {
+		link = link[:idx]
+	}
+	if link == "" {
+		return ""
+	}
+
+	// Skip URLs
+	if strings.Contains(link, "://") {
+		return ""
+	}
+
+	// Resolve: absolute from project root, or relative to baseDir
+	var resolved string
+	if strings.HasPrefix(link, "/") {
+		resolved = strings.TrimPrefix(link, "/")
+	} else {
+		resolved = filepath.Join(baseDir, link)
+	}
+
+	return filepath.Clean(resolved)
+}
+
+// computeHeadingSimilarity computes Jaccard similarity between heading tokens
+func computeHeadingSimilarity(currentHeadings, otherHeadings []string, otherFileName string) float64 {
+	if len(currentHeadings) == 0 && len(otherHeadings) == 0 {
+		return 0.0
+	}
+
+	// Get stopwords
+	stopwords := map[string]bool{
+		"the": true, "a": true, "an": true, "is": true, "are": true, "was": true, "were": true,
+		"be": true, "been": true, "being": true, "have": true, "has": true, "had": true,
+		"do": true, "does": true, "did": true, "will": true, "would": true, "shall": true,
+		"should": true, "may": true, "might": true, "can": true, "could": true, "and": true,
+		"but": true, "or": true, "nor": true, "not": true, "so": true, "yet": true, "for": true,
+		"in": true, "on": true, "at": true, "to": true, "of": true, "by": true, "with": true,
+		"from": true, "up": true, "out": true, "off": true, "over": true, "into": true,
+		"then": true, "than": true, "this": true, "that": true, "these": true, "those": true,
+		"it": true, "its": true, "spec": true, "specification": true, "overview": true,
+		"document": true, "file": true, "section": true,
+	}
+
+	// Extract tokens from headings
+	getTokens := func(headings []string) map[string]bool {
+		tokens := make(map[string]bool)
+		for _, h := range headings {
+			words := strings.Fields(strings.ToLower(h))
+			for _, w := range words {
+				// Remove punctuation
+				w = strings.Trim(w, ".,;:!?\"'()[]{}")
+				if w != "" && !stopwords[w] {
+					tokens[w] = true
+				}
+			}
+		}
+		return tokens
+	}
+
+	currentTokens := getTokens(currentHeadings)
+	otherTokens := getTokens(otherHeadings)
+
+	// Add filename tokens
+	filenameTokens := strings.Split(otherFileName, "-")
+	for _, tok := range filenameTokens {
+		tok = strings.ReplaceAll(tok, "_", "-")
+		tok = strings.ToLower(tok)
+		tok = strings.TrimSuffix(tok, ".md")
+		if tok != "" && !stopwords[tok] {
+			otherTokens[tok] = true
+		}
+	}
+
+	// Compute Jaccard similarity
+	if len(currentTokens) == 0 && len(otherTokens) == 0 {
+		return 0.0
+	}
+
+	intersection := 0
+	union := 0
+
+	for token := range currentTokens {
+		union++
+		if otherTokens[token] {
+			intersection++
+		}
+	}
+
+	for token := range otherTokens {
+		if !currentTokens[token] {
+			union++
+		}
+	}
+
+	if union == 0 {
+		return 0.0
+	}
+
+	return float64(intersection) / float64(union)
+}
+
+// computeDirProximity computes directory proximity score
+func computeDirProximity(dir1, dir2 string) float64 {
+	// Normalize paths
+	dir1 = strings.Trim(dir1, "/")
+	dir2 = strings.Trim(dir2, "/")
+
+	// Same directory
+	if dir1 == dir2 {
+		return 1.0
+	}
+
+	// Parent/child relationship
+	if strings.HasPrefix(dir1, dir2+"/") || strings.HasPrefix(dir2, dir1+"/") {
+		return 0.6
+	}
+
+	// Sibling directories (share parent)
+	parent1 := filepath.Dir(dir1)
+	parent2 := filepath.Dir(dir2)
+	if parent1 == parent2 && parent1 != "." {
+		return 0.4
+	}
+
+	// Share a common path prefix
+	parts1 := strings.Split(dir1, "/")
+	parts2 := strings.Split(dir2, "/")
+
+	commonPrefix := 0
+	minLen := len(parts1)
+	if len(parts2) < minLen {
+		minLen = len(parts2)
+	}
+
+	for i := 0; i < minLen; i++ {
+		if parts1[i] == parts2[i] {
+			commonPrefix++
+		} else {
+			break
+		}
+	}
+
+	if commonPrefix > 0 {
+		return 0.2
+	}
+
+	// Unrelated
+	return 0.0
 }
 
 func init() {

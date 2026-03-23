@@ -107,6 +107,12 @@ body {
     grid-column: 1 / -1 !important;
   }
   
+  /* View page elements span full width in grid */
+  .breadcrumb,
+  .view-layout {
+    grid-column: 1 / -1 !important;
+  }
+  
   /* Ensure sections don't have extra spacing */
   .file-list-section .section-title,
   .tree-section .section-title {
@@ -566,6 +572,153 @@ body {
   padding: 40px;
   color: var(--text-secondary);
 }
+
+/* ── Sidebar ── */
+.view-layout {
+  display: flex;
+  gap: 0;
+}
+
+.view-sidebar {
+  width: 240px;
+  min-width: 240px;
+  border-right: 1px solid var(--border);
+  overflow-y: auto;
+  max-height: calc(100dvh - 120px);
+}
+
+.view-main {
+  flex: 1;
+  min-width: 0;
+  padding-left: 24px;
+}
+
+.sidebar-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 1;
+}
+
+.sidebar-tabs .tab {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border: none;
+  border-right: 1px solid var(--border);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sidebar-tabs .tab:last-child { border-right: none; }
+
+.sidebar-tabs .tab.active {
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.sidebar-section-title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  padding: 12px 12px 4px;
+}
+
+.sidebar-item {
+  padding: 6px 12px;
+  cursor: pointer;
+  border-radius: 4px;
+  margin: 0 4px;
+  transition: background 0.1s;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sidebar-item:hover { background: var(--bg-hover); }
+
+.sidebar-item .file-name {
+  font-size: 0.85rem;
+  color: var(--accent);
+  word-break: break-word;
+}
+
+.sidebar-item .file-dir {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.sidebar-empty {
+  text-align: center;
+  padding: 24px 12px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+/* Sidebar toggle in breadcrumb */
+.sidebar-toggle {
+  padding: 4px 8px;
+  font-size: 1rem;
+  cursor: pointer;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  margin-right: 8px;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.sidebar-toggle:hover { background: var(--bg-hover); }
+
+/* Mobile overlay mode */
+@media (max-width: 767px) {
+  .view-sidebar {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 280px;
+    min-width: 280px;
+    z-index: 100;
+    background: var(--bg);
+    max-height: none;
+  }
+  
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.3);
+    z-index: 99;
+  }
+}
+
+/* Sidebar commit list styling */
+.view-sidebar .commit-list {
+  border: none;
+  border-radius: 0;
+  max-height: none;
+}
+
+.view-sidebar .commit-item {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.view-sidebar .commit-item:last-child { border-bottom: none; }
+
+.view-sidebar .commit-hash { font-size: 0.7rem; }
+
+.view-sidebar .commit-message { font-size: 0.8rem; }
+
+.view-sidebar .commit-author { font-size: 0.7rem; }
+
+.view-sidebar .commit-age { font-size: 0.65rem; }
 
 /* ── Responsive ── */
 @media (max-width: 600px) {
