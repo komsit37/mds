@@ -93,8 +93,8 @@ func main() {
 	}))
 
 	// Auto port shifting
-	basePort := 8080
-	maxPort := 8100
+	basePort := 8090
+	maxPort := 8110
 	var listener net.Listener
 	var port int
 
