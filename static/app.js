@@ -97,11 +97,37 @@ async function showFileList() {
   renderFileList();
 }
 
+// ── Tree Expand/Collapse ──
+function expandAll() {
+  const folders = document.querySelectorAll('.tree-folder-label[data-dir-id]');
+  folders.forEach(folder => {
+    const id = folder.getAttribute('data-dir-id');
+    const el = document.getElementById(id);
+    const arrow = document.getElementById('arrow-' + id);
+    if (el && arrow) {
+      el.style.display = '';
+      arrow.classList.add('open');
+    }
+  });
+}
+
+function collapseAll() {
+  const folders = document.querySelectorAll('.tree-folder-label[data-dir-id]');
+  folders.forEach(folder => {
+    const id = folder.getAttribute('data-dir-id');
+    const el = document.getElementById(id);
+    const arrow = document.getElementById('arrow-' + id);
+    if (el && arrow) {
+      el.style.display = 'none';
+      arrow.classList.remove('open');
+    }
+  });
+}
+
 function renderFileList() {
   const app = document.getElementById('app');
   const files = state.filterChanged ? state.files.filter(f => f.changed) : state.files;
   const recentFiles = files.slice(0, state.recentLimit);
-  const hasMore = files.length > state.recentLimit;
 
   let html = `
     <div class="header">
@@ -118,7 +144,8 @@ function renderFileList() {
     </div>
   `;
 
-  // Recently changed
+  // File list section (recent files removed)
+  html += '<div class="file-list-section">';
   html += '<div class="section-title">Recently Changed</div>';
   if (recentFiles.length === 0) {
     html += '<div class="loading">No files found</div>';
@@ -128,18 +155,31 @@ function renderFileList() {
       html += fileItemHTML(f);
     }
     html += '</ul>';
-    if (hasMore) {
-      html += `<button class="btn show-more" onclick="showMoreRecent()">Show more (${files.length - state.recentLimit} remaining)</button>`;
-    }
   }
+  html += '</div>';
 
   // File tree
   if (!state.filterChanged) {
+    html += '<div class="tree-section">';
     html += '<div class="section-title">All Files</div>';
+    html += '<div class="tree-controls">';
+    html += `<button class="btn" onclick="expandAll()" title="Expand all">⬌ Expand all</button>`;
+    html += `<button class="btn" onclick="collapseAll()" title="Collapse all">⬌ Collapse all</button>`;
+    html += '</div>';
     html += buildTreeHTML(state.files);
+    html += '</div>';
   } else if (files.length > 20) {
+    html += '<div class="tree-section">';
     html += '<div class="section-title">All Changed Files</div>';
+    html += '<div class="tree-controls">';
+    html += `<button class="btn" onclick="expandAll()" title="Expand all">⬌ Expand all</button>`;
+    html += `<button class="btn" onclick="collapseAll()" title="Collapse all">⬌ Collapse all</button>`;
+    html += '</div>';
     html += buildTreeHTML(files);
+    html += '</div>';
+  } else {
+    // No tree to show
+    html += '<div class="tree-section"></div>';
   }
 
   app.innerHTML = html;
@@ -213,7 +253,7 @@ function renderTree(node, prefix) {
       const id = 'dir-' + (prefix + key).replace(/[^a-zA-Z0-9]/g, '-');
       html += `
         <li>
-          <div class="tree-folder-label" onclick="toggleDir('${id}')">
+          <div class="tree-folder-label" onclick="toggleDir('${id}')" data-dir-id="${id}">
             <span class="arrow open" id="arrow-${id}">▶</span>
             📁 ${esc(key)}
           </div>

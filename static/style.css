@@ -85,6 +85,42 @@ body {
   padding: 0 12px;
 }
 
+/* Two-column layout for wide screens only */
+@media (min-width: 1024px) {
+  #app {
+    max-width: none !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 24px;
+    padding: 0 24px;
+  }
+  
+  .file-list-section {
+    grid-column: 1 !important;
+  }
+  
+  .tree-section {
+    grid-column: 2 !important;
+  }
+  
+  .header {
+    grid-column: 1 / -1 !important;
+  }
+  
+  /* Ensure sections don't have extra spacing */
+  .file-list-section .section-title,
+  .tree-section .section-title {
+    margin-top: 0;
+  }
+}
+
+/* Remove height limit on wide screens */
+@media (min-width: 1024px) {
+  .tree-section {
+    max-height: none !important;
+  }
+}
+
 /* ── Header ── */
 .header {
   display: flex;
@@ -231,6 +267,22 @@ body {
   border-left: 1px solid var(--border);
   padding-left: 8px;
 }
+
+/* Tree controls */
+.tree-controls {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.tree-controls .btn {
+  padding: 4px 8px;
+  font-size: 0.8rem;
+}
+.tree-controls .btn:hover {
+  background: var(--accent-bg);
+  border-color: var(--accent);
+  color: var(--accent);
+}
 .tree-folder-label {
   display: flex;
   align-items: center;
@@ -262,6 +314,26 @@ body {
 }
 .tree-file:hover { background: var(--bg-hover); }
 .tree-file .file-name { color: var(--accent); word-break: break-word; }
+
+.tree-section {
+  max-height: 70vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.tree-section::-webkit-scrollbar {
+  width: 6px;
+}
+.tree-section::-webkit-scrollbar-track {
+  background: transparent;
+}
+.tree-section::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+.tree-section::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}
 
 /* ── View Page ── */
 .breadcrumb {
