@@ -1,6 +1,7 @@
 // ── State ──
 let state = { project: '', files: [], isGit: false, filterChanged: false, showAll: false, recentLimit: 10,
-  sidebarOpen: false, sidebarTab: 'related', relatedCache: null, historyCache: null, currentPath: '' };
+  sidebarOpen: false, sidebarTab: 'related', relatedCache: null, historyCache: null, currentPath: '',
+  recentGroups: [] };
 
 // ── Theme ──
 // Modes: 'auto' (follow system), 'light', 'dark'
@@ -104,6 +105,16 @@ async function showFileList() {
     return;
   }
 
+  // Fetch recent groups
+  try {
+    const recentRes = await fetch('/api/recent');
+    const recentData = await recentRes.json();
+    state.recentGroups = recentData.groups || [];
+  } catch (e) {
+    console.warn('Error loading recent groups:', e);
+    state.recentGroups = [];
+  }
+
   renderFileList();
 }
 
@@ -136,10 +147,53 @@ function collapseAll() {
 
 function renderFileList() {
   const app = document.getElementById('app');
-  const files = state.filterChanged ? state.files.filter(f => f.changed) : state.files;
-  const recentFiles = files.slice(0, state.recentLimit);
-  const hasMore = files.length > state.recentLimit;
+  
+  // Set default recentLimit based on screen width
+  if (state.recentLimit === 10 && window.innerWidth >= 1024) {
+    state.recentLimit = 20;
+  }
 
+  // Handle Changed filter mode - use flat list
+  if (state.filterChanged) {
+    const files = state.files.filter(f => f.changed);
+    const recentFiles = files.slice(0, state.recentLimit);
+    const hasMore = files.length > state.recentLimit;
+
+    let html = `
+      <div class="header">
+        <h1><a href="#/"><span class="icon">📄</span>${esc(state.project)}</a></h1>
+        <div class="toolbar">
+          <button class="btn ${state.showAll ? 'active' : ''}" onclick="toggleAll()">
+            ${state.showAll ? '✓ All files' : '.md'}
+          </button>
+          ${state.isGit ? `<button class="btn ${state.filterChanged ? 'active' : ''}" onclick="toggleFilter()">
+            ${state.filterChanged ? '✓ ' : ''}Changed
+          </button>` : ''}
+          <button class="theme-toggle" id="theme-btn" onclick="cycleTheme()" title="Toggle theme">${themeIcon()}</button>
+        </div>
+      </div>
+    `;
+
+    html += '<div class="file-list-section">';
+    html += '<div class="section-title">Recently Changed</div>';
+    if (recentFiles.length === 0) {
+      html += '<div class="loading">No files found</div>';
+    } else {
+      html += '<ul class="file-list">';
+      for (const f of recentFiles) {
+        html += fileItemHTML(f);
+      }
+      html += '</ul>';
+      if (hasMore) {
+        html += `<button class="btn show-more" onclick="showMoreRecent()">Show more (${files.length - state.recentLimit} remaining)</button>`;
+      }
+    }
+    html += '</div>';
+    app.innerHTML = html;
+    return;
+  }
+
+  // Git mode with recent groups - use grouped rendering
   let html = `
     <div class="header">
       <h1><a href="#/"><span class="icon">📄</span>${esc(state.project)}</a></h1>
@@ -155,46 +209,46 @@ function renderFileList() {
     </div>
   `;
 
-  // File list section (recent files removed)
   html += '<div class="file-list-section">';
   html += '<div class="section-title">Recently Changed</div>';
-  if (recentFiles.length === 0) {
-    html += '<div class="loading">No files found</div>';
-  } else {
-    html += '<ul class="file-list">';
-    for (const f of recentFiles) {
-      html += fileItemHTML(f);
+  
+  if (state.isGit && state.recentGroups.length > 0) {
+    const groupsHtml = renderRecentGroups();
+    if (groupsHtml) {
+      html += groupsHtml;
+    } else {
+      html += '<div class="loading">No recent changes</div>';
     }
-    html += '</ul>';
-    if (hasMore) {
-      html += `<button class="btn show-more" onclick="showMoreRecent()">Show more (${files.length - state.recentLimit} remaining)</button>`;
+  } else {
+    // Fallback to flat list
+    const files = state.files;
+    const recentFiles = files.slice(0, state.recentLimit);
+    const hasMore = files.length > state.recentLimit;
+    
+    if (recentFiles.length === 0) {
+      html += '<div class="loading">No files found</div>';
+    } else {
+      html += '<ul class="file-list">';
+      for (const f of recentFiles) {
+        html += fileItemHTML(f);
+      }
+      html += '</ul>';
+      if (hasMore) {
+        html += `<button class="btn show-more" onclick="showMoreRecent()">Show more (${files.length - state.recentLimit} remaining)</button>`;
+      }
     }
   }
   html += '</div>';
 
-  // File tree
-  if (!state.filterChanged) {
-    html += '<div class="tree-section">';
-    html += '<div class="section-title">All Files</div>';
-    html += '<div class="tree-controls">';
-    html += `<button class="btn" onclick="expandAll()" title="Expand all">⬌ Expand all</button>`;
-    html += `<button class="btn" onclick="collapseAll()" title="Collapse all">⬌ Collapse all</button>`;
-    html += '</div>';
-    html += buildTreeHTML(state.files);
-    html += '</div>';
-  } else if (files.length > 20) {
-    html += '<div class="tree-section">';
-    html += '<div class="section-title">All Changed Files</div>';
-    html += '<div class="tree-controls">';
-    html += `<button class="btn" onclick="expandAll()" title="Expand all">⬌ Expand all</button>`;
-    html += `<button class="btn" onclick="collapseAll()" title="Collapse all">⬌ Collapse all</button>`;
-    html += '</div>';
-    html += buildTreeHTML(files);
-    html += '</div>';
-  } else {
-    // No tree to show
-    html += '<div class="tree-section"></div>';
-  }
+  // File tree (always shown in non-filtered mode)
+  html += '<div class="tree-section">';
+  html += '<div class="section-title">All Files</div>';
+  html += '<div class="tree-controls">';
+  html += `<button class="btn" onclick="expandAll()" title="Expand all">⬌ Expand all</button>`;
+  html += `<button class="btn" onclick="collapseAll()" title="Collapse all">⬌ Collapse all</button>`;
+  html += '</div>';
+  html += buildTreeHTML(state.files);
+  html += '</div>';
 
   app.innerHTML = html;
 }
@@ -209,6 +263,58 @@ function fileItemHTML(f) {
       <span class="file-time">${timeAgo(f.modTime)}</span>
     </li>
   `;
+}
+
+function renderRecentGroups() {
+  let html = '';
+  let totalFiles = 0;
+
+  for (const group of state.recentGroups) {
+    if (totalFiles >= state.recentLimit) break;
+
+    if (group.type === 'uncommitted') {
+      html += '<div class="recent-group">';
+      html += '<div class="recent-group-header uncommitted-header">Uncommitted</div>';
+    } else {
+      html += '<div class="recent-group">';
+      html += '<div class="recent-group-header">';
+      html += `<span class="commit-hash">${esc(group.shortHash)}</span> `;
+      html += `<span class="recent-group-message">${esc(group.message)}</span>`;
+      html += `<span class="recent-group-age">${esc(group.age)}</span>`;
+      html += '</div>';
+    }
+
+    html += '<ul class="file-list">';
+    for (const f of group.files) {
+      totalFiles++;
+      if (totalFiles > state.recentLimit) break;
+      const dir = f.dir === '.' ? '' : f.dir + '/';
+      html += `
+        <li class="file-item" onclick="location.hash='#/view/${encodeURIComponent(f.path)}'">
+          <span class="file-name">${esc(f.name)}</span>
+          <span class="file-dir">${esc(dir)}</span>
+          ${group.type === 'uncommitted' ? '<span class="badge badge-changed">M</span>' : ''}
+        </li>
+      `;
+    }
+    html += '</ul>';
+    html += '</div>';
+  }
+
+  // Show "Show more" button if there are more groups
+  if (totalFiles < state.recentLimit && state.recentGroups.length > 0) {
+    // Check if there are more files in remaining groups
+    let remainingCount = 0;
+    for (const group of state.recentGroups) {
+      remainingCount += group.files.length;
+      if (remainingCount >= state.recentLimit - totalFiles) break;
+    }
+    if (remainingCount > state.recentLimit - totalFiles) {
+      html += `<button class="btn show-more" onclick="showMoreRecent()">Show more (${remainingCount - (state.recentLimit - totalFiles)} more)</button>`;
+    }
+  }
+
+  return html;
 }
 
 function toggleFilter() {

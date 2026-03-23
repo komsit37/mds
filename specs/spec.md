@@ -59,6 +59,92 @@ mds /path/to/project
 
 ## API Specification
 
+### `GET /api/recent`
+
+Returns recent file changes grouped by git commit. Used by the file list page to show commit-grouped activity.
+
+**Response:**
+```json
+{
+  "project": "myapp",
+  "isGit": true,
+  "groups": [
+    {
+      "type": "uncommitted",
+      "message": "",
+      "shortHash": "",
+      "age": "",
+      "date": 0,
+      "files": [
+        { "path": "specs/auth.md", "name": "auth.md", "dir": "specs", "modTime": 1710000000000 }
+      ]
+    },
+    {
+      "type": "commit",
+      "message": "add auth flow",
+      "shortHash": "abc1234",
+      "age": "2 hours ago",
+      "date": 1710000000000,
+      "files": [
+        { "path": "specs/auth.md", "name": "auth.md", "dir": "specs", "modTime": 1710000000000 },
+        { "path": "specs/auth-api.md", "name": "auth-api.md", "dir": "specs", "modTime": 1710000000000 }
+      ]
+    }
+  ]
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `groups[].type` | string | `"uncommitted"` or `"commit"` |
+| `groups[].message` | string | Commit subject line (empty for uncommitted) |
+| `groups[].shortHash` | string | Abbreviated commit SHA |
+| `groups[].age` | string | Human-readable relative time |
+| `groups[].date` | int64 | Unix milliseconds |
+| `groups[].files[]` | array | Files in this group (max 4 per group) |
+
+- Uncommitted group appears first (if any uncommitted .md changes exist)
+- Up to 5 commit groups from `git log --name-only`
+- Files may appear in both uncommitted and commit groups (intentional — shows work-in-progress on top of last commit)
+- Non-git repos return `isGit: false` with empty groups
+
+### `GET /api/related?path=<relative-path>`
+
+Returns files related to the given file, scored by 3 weighted signals.
+
+**Response:**
+```json
+{
+  "related": [
+    {
+      "path": "specs/auth-api.md",
+      "name": "auth-api.md",
+      "dir": "specs",
+      "score": 0.85,
+      "signals": ["linked", "similar"]
+    }
+  ]
+}
+```
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `related[].path` | string | Relative path from project root |
+| `related[].name` | string | File basename |
+| `related[].dir` | string | Parent directory |
+| `related[].score` | float | Composite score (0–1) |
+| `related[].signals` | array | Which signals contributed: `"linked"`, `"similar"`, `"nearby"` |
+
+**Scoring algorithm (3 signals):**
+
+| Signal | Weight | Method |
+|--------|--------|--------|
+| Cross-references | 0.45 | Parse `[text](path)` markdown links. Bidirectional: file links to target (1.0) or target links to file (0.8) |
+| Heading similarity | 0.30 | Extract H1–H3 headings + filename tokens. Jaccard similarity on lowercase tokens with stopword filtering |
+| Directory proximity | 0.25 | Same dir=1.0, parent/child=0.6, sibling dirs=0.4, shared prefix=0.2, unrelated=0.0 |
+
+Returns top 8 results with score >0.05, sorted by score descending.
+
 ### `GET /api/files`
 
 Returns all `.md` files in the project directory, sorted by modification time (newest first).
@@ -197,9 +283,15 @@ Hash-based routing, no server-side routing needed:
 
 Two sections:
 
-1. **Recently Changed** — flat list of up to 20 files sorted by `modTime` descending
-   - Shows: file name, parent directory, **M** badge if changed, relative time ("2m ago")
+1. **Recent Activity** — files grouped by git commit
+   - Fetches from `/api/recent`
+   - **Uncommitted** group at top (if any): shows files with **M** badge, sorted by mod time
+   - **Commit groups** below: each shows commit message + age as header, with files listed underneath
+   - Up to 5 commit groups, each showing up to 4 files
+   - Wide screens (≥1024px) show 20 items; mobile shows 10
+   - Files may appear in both uncommitted and a commit group (intentional)
    - On mobile (<600px): directory path hidden to save space
+   - Falls back to flat mod-time sorted list for non-git repos
 
 2. **All Files** — collapsible directory tree
    - Directories sorted before files, both alphabetical
@@ -215,12 +307,38 @@ Two sections:
 
 **Header:** Project name linking back to `#/`
 
-**Breadcrumb:** `📄 project / dir / **filename.md**` — project links back to file list
+**Breadcrumb:** `☰ toggle button` + `📄 project / dir / **filename.md**` — project links back to file list
 
-**Mode toggle toolbar:**
+**Content toolbar:**
 - `📖 Read` — rendered markdown (default)
 - `± Diff` — colorized unified diff
-- `🕘 History` — commit history list
+
+**Left sidebar** (collapsible, with two tabs):
+
+#### Sidebar: Related Tab
+- Fetches from `/api/related?path=...` (non-blocking, never delays content rendering)
+- Results grouped by signal type:
+  - **Linked** — files connected by markdown links (bidirectional)
+  - **Similar** — files with overlapping heading terms
+  - **Nearby** — files in the same or sibling directories
+- Each item shows filename (accent color, clickable) + directory (muted)
+- Clicking navigates to that file; sidebar stays open, caches cleared
+- Cached in memory — no re-fetch on tab switch back
+
+#### Sidebar: History Tab
+- Fetches from `/api/history?path=...` (only when tab is clicked)
+- Shows list of commits that touched this file (up to 50, follows renames)
+- Each entry: short hash (styled as code badge), commit message, author, relative time
+- Clicking a commit switches content area to Diff mode showing that commit's diff
+- Cached in memory — no re-fetch on tab switch back
+
+#### Sidebar UX
+- **Toggle:** `☰` button in breadcrumb row (shows `✕` when open)
+- **Default state:** open on wide screens (≥1024px), closed on mobile
+- **Persistence:** open/close state saved in `localStorage` (`mds-sidebar`)
+- **Desktop (≥768px):** inline flex layout, sidebar pushes content right (240px wide, 24px content padding)
+- **Mobile (<768px):** overlay drawer from left (280px wide) with semi-transparent backdrop; clicking backdrop closes
+- **No animations:** instant show/hide
 
 #### Read Mode
 - Markdown rendered client-side with `marked.js` (GFM enabled)
@@ -243,14 +361,6 @@ Two sections:
   - `diff`, `index`, `---`, `+++` metadata: muted bold
 - If no changes: centered "No changes" message
 - Monospace font, `pre-wrap` with `break-all` for mobile
-
-#### History Mode
-- Fetches from `/api/history?path=...`
-- Shows list of commits that touched this file (up to 50, follows renames)
-- Each entry: short hash (styled as code badge), commit message, author, relative time
-- Clicking a commit fetches `/api/diff?path=...&commit=<hash>` and shows colorized diff
-- "← Back to history" button above diff to return to the commit list
-- Commit list styled as bordered card list with hover states
 
 ## Styling
 
@@ -289,17 +399,16 @@ Dark mode (prefers-color-scheme: dark):
 - `<600px` (mobile): smaller fonts, tighter padding, hide directory paths in file list
 
 ### Dark/Light Mode
-- Follows `prefers-color-scheme` media query automatically
-- No manual toggle — respects system preference
-- Highlight.js uses separate CSS files loaded via `<link media="(prefers-color-scheme: ...)">`:
-  - `github.min.css` for light
-  - `github-dark.min.css` for dark
-- Mermaid theme set on init based on media query match
+- Three modes: auto (system preference), light, dark — cycled via `◐` button in header
+- Auto mode follows `prefers-color-scheme` media query
+- Preference stored in `localStorage` (`mds-theme`)
+- Highlight.js theme swapped dynamically (light/dark CSS)
+- Mermaid theme re-initialized on mode change
 
 ## Port Auto-Shifting
 
-1. Try binding to `0.0.0.0:8080`
-2. If port taken (`net.Listen` returns error), try `8081`, `8082`, ..., up to `8100`
+1. Try binding to `0.0.0.0:8090`
+2. If port taken (`net.Listen` returns error), try `8091`, `8092`, ..., up to `8110`
 3. If all taken, exit with error
 4. Print actual bound port to stdout
 
@@ -344,6 +453,5 @@ All JS/CSS libraries are downloaded and embedded in the binary. No CDN requests 
 - Multi-project support in one instance
 - Text search across documents
 - Auto-refresh / live reload (WebSocket/SSE)
-- Git log timeline view
 - Authentication / authorization
 - Control plane actions (builds, logs, agent management)

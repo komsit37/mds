@@ -16,11 +16,13 @@ MDS fixes this. One command, instant web UI.
 ## Features
 
 - 📄 Browse all files in a project (`.md` default, toggle to show all)
-- 🔍 Recently changed files first, with **M** badge for uncommitted changes
+- 🔍 Recent activity grouped by git commit, with **M** badge for uncommitted changes
+- 🔗 Related files sidebar — finds linked, similar, and nearby specs automatically
 - 🎨 Mermaid diagrams rendered, code syntax highlighted
 - ± Git diff view — uncommitted changes or per-commit history
-- 📱 Mobile-first responsive design
-- 🌓 Dark/light mode (follows system)
+- 🕘 File history in sidebar — click any commit to see its diff inline
+- 📱 Mobile-first responsive design (overlay sidebar on mobile, inline on desktop)
+- 🌓 Dark/light/auto theme toggle
 - 🔌 Auto port shifting — run multiple instances, one per project
 
 ##### File list

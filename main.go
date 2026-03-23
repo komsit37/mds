@@ -64,6 +64,28 @@ type RelatedResponse struct {
 	Related []RelatedFile `json:"related"`
 }
 
+type RecentFileInfo struct {
+	Path    string `json:"path"`
+	Name    string `json:"name"`
+	Dir     string `json:"dir"`
+	ModTime int64  `json:"modTime"`
+}
+
+type RecentGroup struct {
+	Type      string           `json:"type"`
+	Message   string           `json:"message"`
+	ShortHash string           `json:"shortHash"`
+	Age       string           `json:"age"`
+	Date      int64            `json:"date"`
+	Files     []RecentFileInfo `json:"files"`
+}
+
+type RecentResponse struct {
+	Project string        `json:"project"`
+	Groups  []RecentGroup `json:"groups"`
+	IsGit   bool          `json:"isGit"`
+}
+
 var projectDir string
 var projectName string
 
@@ -96,6 +118,7 @@ func main() {
 	mux.HandleFunc("/api/diff", handleDiff)
 	mux.HandleFunc("/api/history", handleHistory)
 	mux.HandleFunc("/api/related", handleRelated)
+	mux.HandleFunc("/api/recent", handleRecent)
 
 	// Serve static files from embedded FS (no-cache for dev convenience)
 	staticSub, _ := fs.Sub(staticFS, "static")
@@ -984,6 +1007,204 @@ func computeDirProximity(dir1, dir2 string) float64 {
 
 	// Unrelated
 	return 0.0
+}
+
+// handleRecent returns recent file changes grouped by git commit
+func handleRecent(w http.ResponseWriter, r *http.Request) {
+	if !isGitRepo() {
+		resp := RecentResponse{
+			Project: projectName,
+			Groups:  []RecentGroup{},
+			IsGit:   false,
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
+	var groups []RecentGroup
+
+	// 1. Uncommitted group - get changed .md files
+	changedFiles := getGitChangedFiles()
+	var uncommittedFiles []RecentFileInfo
+
+	for path := range changedFiles {
+		// Filter to .md files only
+		if !strings.HasSuffix(strings.ToLower(path), ".md") {
+			continue
+		}
+		cleanPath := filepath.Clean(path)
+		absPath := filepath.Join(projectDir, cleanPath)
+		stat, err := os.Stat(absPath)
+		if err != nil {
+			// File was deleted, skip it
+			continue
+		}
+		uncommittedFiles = append(uncommittedFiles, RecentFileInfo{
+			Path:    cleanPath,
+			Name:    filepath.Base(cleanPath),
+			Dir:     filepath.Dir(cleanPath),
+			ModTime: stat.ModTime().UnixMilli(),
+		})
+	}
+
+	// Sort by ModTime descending
+	sort.Slice(uncommittedFiles, func(i, j int) bool {
+		return uncommittedFiles[i].ModTime > uncommittedFiles[j].ModTime
+	})
+
+	// Only add uncommitted group if there are files
+	if len(uncommittedFiles) > 0 {
+		groups = append(groups, RecentGroup{
+			Type:      "uncommitted",
+			Message:   "",
+			ShortHash: "",
+			Age:       "",
+			Date:      0,
+			Files:     uncommittedFiles,
+		})
+	}
+
+	// 2. Commit groups - get last 10 commits that touched .md files
+	cmd := exec.Command("git", "log", "--format=%H%x00%h%x00%s%x00%ar%x00%at", "-10", "--diff-filter=ACMR", "--name-only", "--", "*.md", "**/*.md")
+	cmd.Dir = projectDir
+	out, err := cmd.Output()
+	if err == nil && len(strings.TrimSpace(string(out))) > 0 {
+		// Parse the output
+		lines := strings.Split(string(out), "\n")
+		var commits []struct {
+			hash    string
+			short   string
+			message string
+			age     string
+			date    int64
+			files   []string
+		}
+
+		var current *struct {
+			hash    string
+			short   string
+			message string
+			age     string
+			date    int64
+			files   []string
+		}
+
+		for _, line := range lines {
+			if strings.Contains(line, "\x00") {
+				// This is a commit header line
+				// Save previous commit if exists
+				if current != nil && len(current.files) > 0 {
+					commits = append(commits, *current)
+				}
+				// Start new commit
+				fields := strings.SplitN(line, "\x00", 5)
+				if len(fields) >= 5 {
+					current = &struct {
+						hash    string
+						short   string
+						message string
+						age     string
+						date    int64
+						files   []string
+					}{
+						hash:    fields[0],
+						short:   fields[1],
+						message: fields[2],
+						age:     fields[3],
+						date:    0,
+						files:   []string{},
+					}
+					// Parse date (unix seconds)
+					fmt.Sscanf(fields[4], "%d", &current.date)
+					current.date = current.date * 1000 // convert to milliseconds
+				}
+			} else if strings.TrimSpace(line) != "" && current != nil {
+				// This is a filename line
+				filePath := strings.TrimSpace(line)
+				current.files = append(current.files, filePath)
+			}
+		}
+
+		// Don't forget the last commit
+		if current != nil && len(current.files) > 0 {
+			commits = append(commits, *current)
+		}
+
+		// Get git root for path conversion (once, outside loop)
+		rootCmd := exec.Command("git", "rev-parse", "--show-toplevel")
+		rootCmd.Dir = projectDir
+		rootOut, _ := rootCmd.Output()
+		gitRoot := strings.TrimSpace(string(rootOut))
+
+		// Process commits and create RecentGroup for each
+		for _, commit := range commits {
+			if len(groups) >= 5 {
+				// Cap at 5 commit groups
+				break
+			}
+
+			var groupFiles []RecentFileInfo
+			for _, filePath := range commit.files {
+				filePath = strings.TrimSpace(filePath)
+				if filePath == "" {
+					continue
+				}
+
+				// Convert from git-root-relative to projectDir-relative
+				absPath := filepath.Join(gitRoot, filePath)
+				relPath, err := filepath.Rel(projectDir, absPath)
+				if err != nil || strings.HasPrefix(relPath, "..") {
+					continue
+				}
+
+				// Check if file still exists
+				stat, err := os.Stat(absPath)
+				if err != nil {
+					// File was deleted, skip it
+					continue
+				}
+
+				cleanRelPath := filepath.Clean(relPath)
+				groupFiles = append(groupFiles, RecentFileInfo{
+					Path:    cleanRelPath,
+					Name:    filepath.Base(cleanRelPath),
+					Dir:     filepath.Dir(cleanRelPath),
+					ModTime: stat.ModTime().UnixMilli(),
+				})
+			}
+
+			// Only add group if it has files
+			if len(groupFiles) > 0 {
+				// Cap at 4 files per group
+				if len(groupFiles) > 4 {
+					groupFiles = groupFiles[:4]
+				}
+
+				groups = append(groups, RecentGroup{
+					Type:      "commit",
+					Message:   commit.message,
+					ShortHash: commit.short,
+					Age:       commit.age,
+					Date:      commit.date,
+					Files:     groupFiles,
+				})
+			}
+		}
+	}
+
+	if groups == nil {
+		groups = []RecentGroup{}
+	}
+
+	resp := RecentResponse{
+		Project: projectName,
+		Groups:  groups,
+		IsGit:   true,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 func init() {

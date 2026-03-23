@@ -720,6 +720,59 @@ body {
 
 .view-sidebar .commit-age { font-size: 0.65rem; }
 
+/* ── Recent Groups ── */
+.recent-group {
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.recent-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+.recent-group-header.uncommitted-header {
+  font-weight: 600;
+  color: var(--badge-changed);
+  background: var(--badge-changed-bg);
+}
+.recent-group-message {
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
+}
+.recent-group-age {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.recent-group .file-list {
+  margin: 0;
+}
+.recent-group .file-item {
+  padding: 6px 12px;
+}
+.recent-group .commit-hash {
+  font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace;
+  font-size: 0.7rem;
+  color: var(--accent);
+  background: var(--accent-bg);
+  padding: 1px 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
 /* ── Responsive ── */
 @media (max-width: 600px) {
   html { font-size: 14px; }
