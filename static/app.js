@@ -681,7 +681,7 @@ async function loadReadView(path) {
     const res = await fetch('/api/content?path=' + encodeURIComponent(path));
     const text = await res.text();
     if (path.toLowerCase().endsWith('.md')) {
-      content.innerHTML = '<div class="md-content">' + renderMarkdown(text) + '</div>';
+      content.innerHTML = '<div class="md-content">' + renderMarkdown(text, path) + '</div>';
       highlightCode(content);
       await renderMermaidBlocks(content);
     } else {
@@ -717,9 +717,12 @@ async function loadDiffView(path) {
 }
 
 // ── Markdown Rendering ──
-function renderMarkdown(md) {
+function renderMarkdown(md, basePath) {
   const renderer = new marked.Renderer();
   const originalCode = renderer.code;
+
+  // Resolve relative image paths to the asset endpoint
+  const baseDir = basePath ? basePath.split('/').slice(0, -1).join('/') : '';
 
   renderer.code = function ({ text, lang }) {
     if (lang === 'mermaid') {
@@ -731,7 +734,43 @@ function renderMarkdown(md) {
     return `<pre><code class="hljs language-${esc(lang || '')}">${highlighted}</code></pre>`;
   };
 
+  renderer.image = function ({ href, title, text }) {
+    const resolvedSrc = resolveImageSrc(href, baseDir);
+    const titleAttr = title ? ` title="${esc(title)}"` : '';
+    return `<img src="${resolvedSrc}" alt="${esc(text || '')}"${titleAttr} loading="lazy">`;
+  };
+
   return marked.parse(md, { renderer, breaks: false, gfm: true });
+}
+
+// Resolve an image href to a URL, rewriting project-relative paths to /api/asset
+function resolveImageSrc(href, baseDir) {
+  if (!href) return '';
+  // External URLs — pass through
+  if (/^https?:\/\//.test(href) || href.startsWith('data:')) return href;
+  // Absolute project path (starts with /)
+  let resolved;
+  if (href.startsWith('/')) {
+    resolved = href.slice(1); // strip leading /
+  } else {
+    // Relative to the current file's directory
+    resolved = baseDir ? baseDir + '/' + href : href;
+  }
+  // Normalize (collapse ../ and ./)
+  resolved = normalizePath(resolved);
+  return '/api/asset?path=' + encodeURIComponent(resolved);
+}
+
+// Simple path normalization (resolve . and .. segments)
+function normalizePath(p) {
+  const parts = p.split('/');
+  const result = [];
+  for (const part of parts) {
+    if (part === '.' || part === '') continue;
+    if (part === '..') { result.pop(); continue; }
+    result.push(part);
+  }
+  return result.join('/');
 }
 
 function highlightCode(container) {

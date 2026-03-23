@@ -41,6 +41,7 @@ graph TD
 | `GET /api/history?path=` | Commit history for a file (up to 50) |
 | `GET /api/related?path=` | Related files by link/similarity/proximity |
 | `GET /api/recent` | Recent changes grouped by git commit |
+| `GET /api/asset?path=` | Serve project image files (jpg, png, gif, webp, svg, etc.) |
 
 ## Data Flow
 

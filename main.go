@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"mime"
 	"net"
 	"net/http"
 	"os"
@@ -119,6 +120,7 @@ func main() {
 	mux.HandleFunc("/api/history", handleHistory)
 	mux.HandleFunc("/api/related", handleRelated)
 	mux.HandleFunc("/api/recent", handleRecent)
+	mux.HandleFunc("/api/asset", handleAsset)
 
 	// Serve static files from embedded FS (no-cache for dev convenience)
 	staticSub, _ := fs.Sub(staticFS, "static")
@@ -1205,6 +1207,61 @@ func handleRecent(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// imageExtensions contains allowed image file extensions for the asset endpoint
+var imageExtensions = map[string]bool{
+	".jpg": true, ".jpeg": true, ".png": true, ".gif": true,
+	".webp": true, ".svg": true, ".bmp": true, ".ico": true,
+	".tiff": true, ".tif": true, ".avif": true,
+}
+
+func handleAsset(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Query().Get("path")
+	if path == "" {
+		http.Error(w, "missing path parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Sanitize path to prevent directory traversal
+	cleanPath := filepath.Clean(path)
+	if strings.HasPrefix(cleanPath, "..") || filepath.IsAbs(cleanPath) {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+
+	// Only serve image files
+	ext := strings.ToLower(filepath.Ext(cleanPath))
+	if !imageExtensions[ext] {
+		http.Error(w, "forbidden file type", http.StatusForbidden)
+		return
+	}
+
+	absPath := filepath.Join(projectDir, cleanPath)
+
+	// Verify the resolved path is still within the project directory
+	absPath, err := filepath.Abs(absPath)
+	if err != nil || !strings.HasPrefix(absPath, projectDir) {
+		http.Error(w, "invalid path", http.StatusBadRequest)
+		return
+	}
+
+	// Detect content type
+	contentType := mime.TypeByExtension(ext)
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	// Serve the file
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		http.Error(w, "file not found", http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Write(data)
 }
 
 func init() {
