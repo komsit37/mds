@@ -1,7 +1,7 @@
 // ── State ──
 let state = { project: '', files: [], isGit: false, filterChanged: false, showAll: false, recentLimit: 10,
   sidebarOpen: false, sidebarTab: 'related', relatedCache: null, historyCache: null, currentPath: '',
-  recentGroups: [] };
+  recentGroups: [], selectedIndex: -1, filesCache: null, lastKey: '', lastKeyTime: 0 };
 
 // ── Theme ──
 // Modes: 'auto' (follow system), 'light', 'dark'
@@ -74,6 +74,153 @@ document.addEventListener('DOMContentLoaded', () => {
   
   route();
   window.addEventListener('hashchange', route);
+  
+  // Global keyboard handler
+  document.addEventListener('keydown', (e) => {
+    // Ignore if focused on input or textarea
+    const tag = e.target.tagName.toLowerCase();
+    if (tag === 'input' || tag === 'textarea') return;
+    
+    // Close overlays with Escape
+    if (e.key === 'Escape') {
+      if (document.getElementById('picker-overlay')) { closePicker(); e.preventDefault(); return; }
+      if (document.getElementById('help-overlay')) { closeHelp(); e.preventDefault(); return; }
+    }
+    // Toggle help with ? if already open
+    if (e.key === '?' && document.getElementById('help-overlay')) { closeHelp(); e.preventDefault(); return; }
+    
+    const hash = location.hash;
+    const isFileListPage = hash === '#/' || hash === '';
+    const isViewPage = hash.startsWith('#/view/');
+    
+    // Track last key for combo detection (gg)
+    const now = Date.now();
+    const key = e.key;
+    
+    // Detect 'gg' combo (two 'g' presses within 500ms)
+    if (key === 'g') {
+      if (state.lastKey === 'g' && now - state.lastKeyTime < 500) {
+        e.preventDefault();
+        if (isFileListPage) {
+          state.selectedIndex = 0;
+          updateFileListHighlight();
+          // Scroll to top of recently-changed section
+          const recentSection = document.querySelector('.file-list-section');
+          if (recentSection) recentSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        } else if (isViewPage) {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        state.lastKey = '';
+        return;
+      }
+      state.lastKey = 'g';
+      state.lastKeyTime = now;
+      setTimeout(() => { state.lastKey = ''; }, 500);
+    }
+    
+    // File List Page shortcuts
+    if (isFileListPage) {
+      if (key === 'j' || key === 'ArrowDown') {
+        e.preventDefault();
+        const fileItems = document.querySelectorAll('.file-list-section .file-item');
+        if (fileItems.length > 0) {
+          state.selectedIndex = Math.min(state.selectedIndex + 1, fileItems.length - 1);
+          updateFileListHighlight();
+        }
+      } else if (key === 'k' || key === 'ArrowUp') {
+        e.preventDefault();
+        const fileItems = document.querySelectorAll('.file-list-section .file-item');
+        if (fileItems.length > 0) {
+          state.selectedIndex = Math.max(state.selectedIndex - 1, 0);
+          updateFileListHighlight();
+        }
+      } else if (key === 'Enter') {
+        e.preventDefault();
+        const fileItems = document.querySelectorAll('.file-list-section .file-item');
+        if (state.selectedIndex >= 0 && fileItems[state.selectedIndex]) {
+          // The onclick is on the .file-item itself
+          const item = fileItems[state.selectedIndex];
+          const onclick = item.getAttribute('onclick');
+          if (onclick && onclick.includes("location.hash='#/view/")) {
+            const match = onclick.match(/'#\/view\/([^']+)'/);
+            if (match) location.hash = '#/view/' + match[1];
+          }
+        }
+      } else if (key === 'G' && e.shiftKey) {
+        e.preventDefault();
+        const fileItems = document.querySelectorAll('.file-list-section .file-item');
+        if (fileItems.length > 0) {
+          state.selectedIndex = fileItems.length - 1;
+          updateFileListHighlight();
+          // Scroll to bottom of recently-changed section
+          const recentSection = document.querySelector('.file-list-section');
+          if (recentSection) recentSection.scrollIntoView({ behavior: 'smooth', block: 'end' });
+        }
+      } else if (key === '/') {
+        e.preventDefault();
+        openPicker();
+      } else if (key === 'o' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        toggleAll();
+      } else if (key === 'c' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        toggleFilter();
+      } else if (key === '?') {
+        e.preventDefault();
+        openHelp();
+      }
+    }
+    
+    // View Page shortcuts
+    if (isViewPage) {
+      if (key === 'j') {
+        e.preventDefault();
+        window.scrollBy({ top: 60, behavior: 'smooth' });
+      } else if (key === 'k') {
+        e.preventDefault();
+        window.scrollBy({ top: -60, behavior: 'smooth' });
+      } else if (e.ctrlKey && (key === 'd' || key === 'u')) {
+        e.preventDefault();
+        const scrollAmount = Math.floor(window.innerHeight / 2);
+        window.scrollBy({ top: key === 'd' ? scrollAmount : -scrollAmount, behavior: 'smooth' });
+      } else if (key === 'G' && e.shiftKey) {
+        e.preventDefault();
+        window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
+      } else if (key === 'q' || key === 'Backspace') {
+        e.preventDefault();
+        location.hash = '#/';
+      } else if (key === '1') {
+        e.preventDefault();
+        const readTab = document.getElementById('tab-read');
+        if (readTab) readTab.click();
+      } else if (key === '2') {
+        e.preventDefault();
+        const diffTab = document.getElementById('tab-diff');
+        if (diffTab) diffTab.click();
+      } else if (key === 'e') {
+        e.preventDefault();
+        toggleSidebar();
+      } else if (key === 'r') {
+        e.preventDefault();
+        if (!state.sidebarOpen) toggleSidebar();
+        switchSidebarTab('related');
+      } else if (key === 'h') {
+        e.preventDefault();
+        if (!state.sidebarOpen) toggleSidebar();
+        switchSidebarTab('history');
+      } else if (key === 'f') {
+        e.preventDefault();
+        if (!state.sidebarOpen) toggleSidebar();
+        switchSidebarTab('files');
+      } else if (key === '/') {
+        e.preventDefault();
+        openPicker();
+      } else if (key === '?') {
+        e.preventDefault();
+        openHelp();
+      }
+    }
+  });
 });
 
 // ── Router ──
@@ -400,6 +547,18 @@ function toggleDir(id) {
   }
 }
 
+// ── File List Selection ──
+function updateFileListHighlight() {
+  const fileItems = document.querySelectorAll('.file-list-section .file-item');
+  fileItems.forEach(item => item.classList.remove('selected'));
+  if (state.selectedIndex >= 0 && state.selectedIndex < fileItems.length) {
+    fileItems[state.selectedIndex].classList.add('selected');
+    // Scroll into view
+    const selected = fileItems[state.selectedIndex];
+    selected.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
 // ── View Page ──
 async function showView(path) {
   const app = document.getElementById('app');
@@ -434,6 +593,7 @@ async function showView(path) {
         <div class="sidebar-tabs">
           <button class="tab ${state.sidebarTab === 'related' ? 'active' : ''}" onclick="switchSidebarTab('related')">Related</button>
           <button class="tab ${state.sidebarTab === 'history' ? 'active' : ''}" onclick="switchSidebarTab('history')">History</button>
+          <button class="tab ${state.sidebarTab === 'files' ? 'active' : ''}" onclick="switchSidebarTab('files')">Files</button>
         </div>
         <div id="sidebar-content"></div>
       </div>
@@ -550,6 +710,13 @@ function switchSidebarTab(tab) {
     } else {
       content.innerHTML = '<div class="loading">Loading…</div>';
       fetchHistory(state.currentPath);
+    }
+  } else if (tab === 'files') {
+    if (state.filesCache) {
+      content.innerHTML = renderFileExplorer(state.filesCache);
+    } else {
+      content.innerHTML = '<div class="loading">Loading…</div>';
+      fetchFileExplorer();
     }
   }
 }
@@ -671,6 +838,114 @@ async function loadCommitDiffFromSidebar(encodedPath, commitHash) {
   } catch (e) {
     content.innerHTML = '<div class="loading">Error loading diff</div>';
   }
+}
+
+// ── File Explorer (Sidebar Tab) ──
+async function fetchFileExplorer() {
+  try {
+    const res = await fetch('/api/files');
+    const data = await res.json();
+    state.filesCache = data.files || [];
+    const content = document.getElementById('sidebar-content');
+    if (state.sidebarTab === 'files') {
+      content.innerHTML = renderFileExplorer(state.filesCache);
+    }
+  } catch (e) {
+    console.warn('Error loading files:', e);
+  }
+}
+
+function renderFileExplorer(files, query) {
+  // Filter input + tree container
+  const q = (query || '').toLowerCase().trim();
+  let filtered = files;
+  if (q) {
+    filtered = files.filter(f => f.path.toLowerCase().includes(q) || f.name.toLowerCase().includes(q));
+  }
+
+  // Build a tree structure from filtered files
+  const tree = {};
+  for (const f of filtered) {
+    const parts = f.path.split('/');
+    let node = tree;
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (!node[parts[i]]) node[parts[i]] = {};
+      node = node[parts[i]];
+    }
+    node[parts[parts.length - 1]] = f;
+  }
+
+  let html = `<div class="sidebar-filter">
+    <input type="text" id="file-explorer-filter" class="sidebar-filter-input" placeholder="Filter files…" value="${esc(query || '')}" oninput="filterFileExplorer(this.value)" autocomplete="off">
+  </div>`;
+  html += '<div id="file-explorer-tree">';
+  if (filtered.length === 0 && q) {
+    html += '<div class="sidebar-empty">No matches</div>';
+  } else {
+    html += renderSidebarTree(tree, '');
+  }
+  html += '</div>';
+  return html;
+}
+
+function filterFileExplorer(query) {
+  if (!state.filesCache) return;
+  const treeContainer = document.getElementById('file-explorer-tree');
+  if (!treeContainer) return;
+
+  const q = (query || '').toLowerCase().trim();
+  let filtered = state.filesCache;
+  if (q) {
+    filtered = state.filesCache.filter(f => f.path.toLowerCase().includes(q) || f.name.toLowerCase().includes(q));
+  }
+
+  const tree = {};
+  for (const f of filtered) {
+    const parts = f.path.split('/');
+    let node = tree;
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (!node[parts[i]]) node[parts[i]] = {};
+      node = node[parts[i]];
+    }
+    node[parts[parts.length - 1]] = f;
+  }
+
+  if (filtered.length === 0 && q) {
+    treeContainer.innerHTML = '<div class="sidebar-empty">No matches</div>';
+  } else {
+    treeContainer.innerHTML = renderSidebarTree(tree, '');
+  }
+}
+
+function renderSidebarTree(node, prefix) {
+  let html = '<ul class="sidebar-tree">';
+  const keys = Object.keys(node).sort((a, b) => {
+    const aIsDir = typeof node[a] === 'object' && !node[a].path;
+    const bIsDir = typeof node[b] === 'object' && !node[b].path;
+    if (aIsDir !== bIsDir) return aIsDir ? -1 : 1;
+    return a.localeCompare(b);
+  });
+  for (const key of keys) {
+    const val = node[key];
+    if (val && val.path) {
+      html += `<li class="sidebar-tree-file" onclick="location.hash='#/view/${encodeURIComponent(val.path)}'">
+        <span class="file-name">${esc(key)}</span>
+        ${val.changed ? '<span class="badge badge-changed">M</span>' : ''}
+      </li>`;
+    } else {
+      const id = 'stree-' + (prefix + key).replace(/[^a-zA-Z0-9]/g, '-');
+      html += `<li>
+        <div class="sidebar-tree-folder" onclick="toggleDir('${id}')">
+          <span class="arrow open" id="arrow-${id}">▶</span> ${esc(key)}
+        </div>
+        <div id="${id}">
+          ${renderSidebarTree(val, prefix + key + '/')}
+        </div>
+      </li>`;
+    }
+  }
+  html += '</ul>';
+  return html;
 }
 
 async function loadReadView(path) {
@@ -840,4 +1115,151 @@ function timeAgo(ms) {
   const months = Math.floor(days / 30);
   if (months < 12) return `${months}mo ago`;
   return `${Math.floor(months / 12)}y ago`;
+}
+
+// ── Fuzzy File Picker Overlay ──
+function openPicker() {
+  // Prevent duplicate
+  if (document.getElementById('picker-overlay')) return;
+  
+  const overlay = document.createElement('div');
+  overlay.id = 'picker-overlay';
+  overlay.className = 'picker-overlay';
+  overlay.innerHTML = `
+    <div class="picker-modal">
+      <input type="text" id="picker-input" class="picker-input" placeholder="Search files…" autocomplete="off">
+      <ul id="picker-results" class="picker-results"></ul>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  
+  // Click backdrop to close
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closePicker();
+  });
+  
+  const input = document.getElementById('picker-input');
+  input.focus();
+  
+  let pickerIndex = 0;
+  let filteredFiles = [];
+  
+  // Load files
+  fetch('/api/files').then(r => r.json()).then(data => {
+    filteredFiles = data.files || [];
+    renderPickerResults();
+  });
+  
+  function renderPickerResults() {
+    const results = document.getElementById('picker-results');
+    if (!results) return;
+    const items = filteredFiles.slice(0, 20);
+    results.innerHTML = items.map((f, i) => {
+      const dir = f.dir === '.' ? '' : f.dir + '/';
+      return `<li class="picker-item ${i === pickerIndex ? 'selected' : ''}"
+                  data-path="${esc(f.path)}"
+                  onclick="pickerSelect('${encodeURIComponent(f.path)}')">
+        <span class="file-name">${esc(f.name)}</span>
+        <span class="file-dir">${esc(dir)}</span>
+      </li>`;
+    }).join('');
+  }
+  
+  input.addEventListener('input', () => {
+    const query = input.value.toLowerCase().trim();
+    fetch('/api/files').then(r => r.json()).then(data => {
+      const allFiles = data.files || [];
+      if (!query) {
+        filteredFiles = allFiles;
+      } else {
+        filteredFiles = allFiles.filter(f => {
+          return f.path.toLowerCase().includes(query) || f.name.toLowerCase().includes(query);
+        });
+        // Sort: prefer name matches over path-only matches
+        filteredFiles.sort((a, b) => {
+          const aName = a.name.toLowerCase().includes(query) ? 0 : 1;
+          const bName = b.name.toLowerCase().includes(query) ? 0 : 1;
+          return aName - bName;
+        });
+      }
+      pickerIndex = 0;
+      renderPickerResults();
+    });
+  });
+  
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closePicker();
+      e.preventDefault();
+    } else if (e.key === 'ArrowDown' || (e.ctrlKey && e.key === 'j') || (e.ctrlKey && e.key === 'n')) {
+      pickerIndex = Math.min(pickerIndex + 1, Math.min(filteredFiles.length - 1, 19));
+      renderPickerResults();
+      e.preventDefault();
+    } else if (e.key === 'ArrowUp' || (e.ctrlKey && e.key === 'k') || (e.ctrlKey && e.key === 'p')) {
+      pickerIndex = Math.max(pickerIndex - 1, 0);
+      renderPickerResults();
+      e.preventDefault();
+    } else if (e.key === 'Enter') {
+      if (filteredFiles[pickerIndex]) {
+        closePicker();
+        location.hash = '#/view/' + encodeURIComponent(filteredFiles[pickerIndex].path);
+      }
+      e.preventDefault();
+    }
+  });
+}
+
+function closePicker() {
+  const el = document.getElementById('picker-overlay');
+  if (el) el.remove();
+}
+
+function pickerSelect(encodedPath) {
+  closePicker();
+  location.hash = '#/view/' + encodedPath;
+}
+
+// ── Help Overlay ──
+function openHelp() {
+  if (document.getElementById('help-overlay')) return;
+  const overlay = document.createElement('div');
+  overlay.id = 'help-overlay';
+  overlay.className = 'picker-overlay';
+  overlay.innerHTML = `
+    <div class="picker-modal help-modal">
+      <h3>Keyboard Shortcuts</h3>
+      <div class="help-columns">
+        <div class="help-section">
+          <h4>Navigation</h4>
+          <div class="help-row"><kbd>j</kbd> / <kbd>k</kbd> <span>Scroll / move selection</span></div>
+          <div class="help-row"><kbd>Ctrl+d</kbd> / <kbd>Ctrl+u</kbd> <span>Half-page scroll</span></div>
+          <div class="help-row"><kbd>g g</kbd> <span>Go to top</span></div>
+          <div class="help-row"><kbd>G</kbd> <span>Go to bottom</span></div>
+          <div class="help-row"><kbd>Enter</kbd> <span>Open file</span></div>
+          <div class="help-row"><kbd>q</kbd> <span>Back to file list</span></div>
+        </div>
+        <div class="help-section">
+          <h4>Panels</h4>
+          <div class="help-row"><kbd>/</kbd> <span>File picker</span></div>
+          <div class="help-row"><kbd>f</kbd> <span>File explorer</span></div>
+          <div class="help-row"><kbd>e</kbd> <span>Toggle sidebar</span></div>
+          <div class="help-row"><kbd>r</kbd> <span>Related files</span></div>
+          <div class="help-row"><kbd>h</kbd> <span>History</span></div>
+          <div class="help-row"><kbd>1</kbd> / <kbd>2</kbd> <span>Read / Diff tab</span></div>
+          <div class="help-row"><kbd>o</kbd> <span>Toggle all files</span></div>
+          <div class="help-row"><kbd>c</kbd> <span>Toggle changed</span></div>
+          <div class="help-row"><kbd>?</kbd> <span>This help</span></div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) closeHelp();
+  });
+}
+
+function closeHelp() {
+  const el = document.getElementById('help-overlay');
+  if (el) el.remove();
 }

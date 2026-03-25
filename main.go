@@ -89,11 +89,23 @@ type RecentResponse struct {
 
 var projectDir string
 var projectName string
+var noGit bool
 
 func main() {
+	// Parse flags and positional args
+	args := os.Args[1:]
+	var positional []string
+	for _, arg := range args {
+		if arg == "--no-git" {
+			noGit = true
+		} else {
+			positional = append(positional, arg)
+		}
+	}
+
 	// Determine project directory
-	if len(os.Args) > 1 {
-		projectDir = os.Args[1]
+	if len(positional) > 0 {
+		projectDir = positional[0]
 	} else {
 		var err error
 		projectDir, err = os.Getwd()
@@ -151,6 +163,9 @@ func main() {
 	url := fmt.Sprintf("http://localhost:%d", port)
 	fmt.Printf("📄 mds — serving specs for [%s]\n", projectName)
 	fmt.Printf("   %s\n", projectDir)
+	if noGit {
+		fmt.Printf("   --no-git: ignoring git, using filesystem walk\n")
+	}
 	fmt.Printf("   %s\n", url)
 
 	// Auto-open browser if available (non-blocking)
@@ -164,6 +179,9 @@ func main() {
 
 // isGitRepo checks if projectDir is inside a git repository
 func isGitRepo() bool {
+	if noGit {
+		return false
+	}
 	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
 	cmd.Dir = projectDir
 	out, err := cmd.Output()
