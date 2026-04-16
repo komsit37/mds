@@ -294,11 +294,6 @@ function collapseAll() {
 
 function renderFileList() {
   const app = document.getElementById('app');
-  
-  // Set default recentLimit based on screen width
-  if (state.recentLimit === 10 && window.innerWidth >= 1024) {
-    state.recentLimit = 20;
-  }
 
   // Handle Changed filter mode - use flat list
   if (state.filterChanged) {
@@ -414,10 +409,11 @@ function fileItemHTML(f) {
 
 function renderRecentGroups() {
   let html = '';
-  let totalFiles = 0;
+  let filesRendered = 0;
+  const totalFiles = state.recentGroups.reduce((sum, group) => sum + group.files.length, 0);
 
   for (const group of state.recentGroups) {
-    if (totalFiles >= state.recentLimit) break;
+    if (filesRendered >= state.recentLimit) break;
 
     if (group.type === 'uncommitted') {
       html += '<div class="recent-group">';
@@ -433,8 +429,8 @@ function renderRecentGroups() {
 
     html += '<ul class="file-list">';
     for (const f of group.files) {
-      totalFiles++;
-      if (totalFiles > state.recentLimit) break;
+      if (filesRendered >= state.recentLimit) break;
+      filesRendered++;
       const dir = f.dir === '.' ? '' : f.dir + '/';
       html += `
         <li class="file-item" onclick="location.hash='#/view/${encodeURIComponent(f.path)}'">
@@ -448,17 +444,8 @@ function renderRecentGroups() {
     html += '</div>';
   }
 
-  // Show "Show more" button if there are more groups
-  if (totalFiles < state.recentLimit && state.recentGroups.length > 0) {
-    // Check if there are more files in remaining groups
-    let remainingCount = 0;
-    for (const group of state.recentGroups) {
-      remainingCount += group.files.length;
-      if (remainingCount >= state.recentLimit - totalFiles) break;
-    }
-    if (remainingCount > state.recentLimit - totalFiles) {
-      html += `<button class="btn show-more" onclick="showMoreRecent()">Show more (${remainingCount - (state.recentLimit - totalFiles)} more)</button>`;
-    }
+  if (totalFiles > filesRendered) {
+    html += `<button class="btn show-more" onclick="showMoreRecent()">Show more (${totalFiles - filesRendered} remaining)</button>`;
   }
 
   return html;

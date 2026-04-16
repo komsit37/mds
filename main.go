@@ -1085,8 +1085,8 @@ func handleRecent(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// 2. Commit groups - get last 10 commits that touched .md files
-	cmd := exec.Command("git", "log", "--format=%H%x00%h%x00%s%x00%ar%x00%at", "-10", "--diff-filter=ACMR", "--name-only", "--", "*.md", "**/*.md")
+	// 2. Commit groups - fetch enough history for frontend pagination
+	cmd := exec.Command("git", "log", "--format=%H%x00%h%x00%s%x00%ar%x00%at", "-100", "--diff-filter=ACMR", "--name-only", "--", "*.md", "**/*.md")
 	cmd.Dir = projectDir
 	out, err := cmd.Output()
 	if err == nil && len(strings.TrimSpace(string(out))) > 0 {
@@ -1159,8 +1159,8 @@ func handleRecent(w http.ResponseWriter, r *http.Request) {
 
 		// Process commits and create RecentGroup for each
 		for _, commit := range commits {
-			if len(groups) >= 5 {
-				// Cap at 5 commit groups
+			if len(groups) >= 50 {
+				// Keep response bounded while still allowing UI "Show more" pagination
 				break
 			}
 

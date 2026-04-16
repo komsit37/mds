@@ -104,7 +104,7 @@ Returns recent file changes grouped by git commit. Used by the file list page to
 | `groups[].files[]` | array | Files in this group (max 4 per group) |
 
 - Uncommitted group appears first (if any uncommitted .md changes exist)
-- Up to 5 commit groups from `git log --name-only`
+- Up to 50 commit groups from `git log --name-only`
 - Files may appear in both uncommitted and commit groups (intentional — shows work-in-progress on top of last commit)
 - Non-git repos return `isGit: false` with empty groups
 
@@ -287,8 +287,8 @@ Two sections:
    - Fetches from `/api/recent`
    - **Uncommitted** group at top (if any): shows files with **M** badge, sorted by mod time
    - **Commit groups** below: each shows commit message + age as header, with files listed underneath
-   - Up to 5 commit groups, each showing up to 4 files
-   - Wide screens (≥1024px) show 20 items; mobile shows 10
+   - Up to 50 commit groups, each showing up to 4 files
+   - Shows 10 items initially; tap/click "Show more" to load older entries
    - Files may appear in both uncommitted and a commit group (intentional)
    - On mobile (<600px): directory path hidden to save space
    - Falls back to flat mod-time sorted list for non-git repos
