@@ -332,6 +332,7 @@ function renderFileList() {
     }
     html += '</div>';
     app.innerHTML = html;
+    maybeFocusDirInTree();
     return;
   }
 
@@ -393,6 +394,7 @@ function renderFileList() {
   html += '</div>';
 
   app.innerHTML = html;
+  maybeFocusDirInTree();
 }
 
 function fileItemHTML(f) {
@@ -505,9 +507,10 @@ function renderTree(node, prefix) {
     } else {
       // Directory
       const id = 'dir-' + (prefix + key).replace(/[^a-zA-Z0-9]/g, '-');
+      const dirPathAttr = prefix ? prefix + '/' + key : key;
       html += `
         <li>
-          <div class="tree-folder-label" onclick="toggleDir('${id}')" data-dir-id="${id}">
+          <div class="tree-folder-label" onclick="toggleDir('${id}')" data-dir-id="${id}" data-dir-path="${esc(dirPathAttr)}">
             <span class="arrow open" id="arrow-${id}">▶</span>
             📁 ${esc(key)}
           </div>
@@ -559,7 +562,8 @@ async function showView(path) {
     if (i === parts.length - 1) {
       breadcrumb += `<strong>${esc(parts[i])}</strong>`;
     } else {
-      breadcrumb += `<span>${esc(parts[i])}</span>`;
+      const dirPath = parts.slice(0, i + 1).join('/');
+      breadcrumb += `<a href="#/" class="breadcrumb-dir" data-dir="${esc(dirPath)}" onclick="navigateToDir(event, '${esc(dirPath)}')">${esc(parts[i])}</a>`;
     }
   }
 
@@ -627,6 +631,43 @@ async function switchTab(tab, encodedPath) {
     loadReadView(path);
   } else {
     loadDiffView(path);
+  }
+}
+
+// ── Breadcrumb Dir Navigation ──
+function navigateToDir(event, dirPath) {
+  event.preventDefault();
+  // Store the target dir so we can focus it after navigating to file list
+  state.targetDir = dirPath;
+  location.hash = '#/';
+}
+
+// Called after renderFileList to handle breadcrumb dir navigation
+function maybeFocusDirInTree() {
+  if (!state.targetDir) return;
+  const dirPath = state.targetDir;
+  state.targetDir = null;
+
+  // Expand the tree to the target directory
+  const parts = dirPath.split('/');
+  let prefix = '';
+  for (const part of parts) {
+    prefix = prefix ? prefix + '/' + part : part;
+    const id = 'dir-' + prefix.replace(/[^a-zA-Z0-9]/g, '-');
+    const el = document.getElementById(id);
+    const arrow = document.getElementById('arrow-' + id);
+    if (el && arrow) {
+      el.style.display = '';
+      arrow.classList.add('open');
+    }
+  }
+
+  // Focus/highlight the directory folder label
+  const folderLabel = document.querySelector(`.tree-folder-label[data-dir-path="${dirPath}"]`);
+  if (folderLabel) {
+    folderLabel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    folderLabel.classList.add('breadcrumb-focus');
+    setTimeout(() => folderLabel.classList.remove('breadcrumb-focus'), 2000);
   }
 }
 
@@ -921,8 +962,9 @@ function renderSidebarTree(node, prefix) {
       </li>`;
     } else {
       const id = 'stree-' + (prefix + key).replace(/[^a-zA-Z0-9]/g, '-');
+      const dirPathAttr = prefix ? prefix + '/' + key : key;
       html += `<li>
-        <div class="sidebar-tree-folder" onclick="toggleDir('${id}')">
+        <div class="sidebar-tree-folder" onclick="toggleDir('${id}')" data-dir-path="${esc(dirPathAttr)}">
           <span class="arrow open" id="arrow-${id}">▶</span> ${esc(key)}
         </div>
         <div id="${id}">

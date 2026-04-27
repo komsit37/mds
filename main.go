@@ -202,12 +202,12 @@ func getGitChangedFiles() map[string]bool {
 	gitRoot := strings.TrimSpace(string(rootOut))
 
 	// Staged + unstaged changes
-	cmd = exec.Command("git", "diff", "--name-only", "HEAD")
+	cmd = exec.Command("git", "-c", "core.quotePath=false", "diff", "--name-only", "HEAD")
 	cmd.Dir = projectDir
 	out, err := cmd.Output()
 	if err != nil {
 		// Maybe no commits yet, try without HEAD
-		cmd = exec.Command("git", "diff", "--name-only")
+		cmd = exec.Command("git", "-c", "core.quotePath=false", "diff", "--name-only")
 		cmd.Dir = projectDir
 		out, _ = cmd.Output()
 	}
@@ -225,7 +225,7 @@ func getGitChangedFiles() map[string]bool {
 	}
 
 	// Also include staged changes
-	cmd = exec.Command("git", "diff", "--name-only", "--cached")
+	cmd = exec.Command("git", "-c", "core.quotePath=false", "diff", "--name-only", "--cached")
 	cmd.Dir = projectDir
 	out, _ = cmd.Output()
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
@@ -241,7 +241,7 @@ func getGitChangedFiles() map[string]bool {
 	}
 
 	// Untracked files
-	cmd = exec.Command("git", "ls-files", "--others", "--exclude-standard")
+	cmd = exec.Command("git", "-c", "core.quotePath=false", "ls-files", "--others", "--exclude-standard")
 	cmd.Dir = projectDir
 	out, _ = cmd.Output()
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
@@ -272,8 +272,9 @@ func listFiles(mdOnly bool) ([]FileInfo, bool) {
 	}
 
 	if isGit {
-		// Use git ls-files for tracked files
-		args := []string{"ls-files", "--full-name"}
+		// Use -z (NUL-delimited) to avoid git's octal-escaping of non-ASCII paths.
+		// Omit --full-name so paths are relative to projectDir (cmd.Dir).
+		args := []string{"ls-files", "-z"}
 		if mdOnly {
 			args = append(args, "*.md", "**/*.md")
 		}
@@ -282,8 +283,7 @@ func listFiles(mdOnly bool) ([]FileInfo, bool) {
 		out, _ := cmd.Output()
 
 		seen := make(map[string]bool)
-		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			line = strings.TrimSpace(line)
+		for _, line := range strings.Split(string(out), "\x00") {
 			if line == "" {
 				continue
 			}
@@ -297,16 +297,16 @@ func listFiles(mdOnly bool) ([]FileInfo, bool) {
 			}
 		}
 
-		// Also include untracked but not ignored files
-		args = []string{"ls-files", "--others", "--exclude-standard"}
+		// Also include untracked but not ignored files.
+		// These are output relative to cmd.Dir (projectDir), no conversion needed.
+		args = []string{"ls-files", "-z", "--others", "--exclude-standard"}
 		if mdOnly {
 			args = append(args, "*.md", "**/*.md")
 		}
 		cmd = exec.Command("git", args...)
 		cmd.Dir = projectDir
 		out, _ = cmd.Output()
-		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			line = strings.TrimSpace(line)
+		for _, line := range strings.Split(string(out), "\x00") {
 			if line == "" {
 				continue
 			}
@@ -1086,7 +1086,7 @@ func handleRecent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Commit groups - fetch enough history for frontend pagination
-	cmd := exec.Command("git", "log", "--format=%H%x00%h%x00%s%x00%ar%x00%at", "-100", "--diff-filter=ACMR", "--name-only", "--", "*.md", "**/*.md")
+	cmd := exec.Command("git", "-c", "core.quotePath=false", "log", "--format=%H%x00%h%x00%s%x00%ar%x00%at", "-100", "--diff-filter=ACMR", "--name-only", "--", "*.md", "**/*.md")
 	cmd.Dir = projectDir
 	out, err := cmd.Output()
 	if err == nil && len(strings.TrimSpace(string(out))) > 0 {
