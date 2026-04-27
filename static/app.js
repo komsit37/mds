@@ -1002,6 +1002,12 @@ function renderMarkdown(md, basePath) {
     return `<img src="${resolvedSrc}" alt="${esc(text || '')}"${titleAttr} loading="lazy">`;
   };
 
+  renderer.link = function ({ href, title, text }) {
+    const resolvedHref = resolveLinkHref(href, baseDir);
+    const titleAttr = title ? ` title="${esc(title)}"` : '';
+    return `<a href="${resolvedHref}"${titleAttr}>${text}</a>`;
+  };
+
   return marked.parse(md, { renderer, breaks: false, gfm: true });
 }
 
@@ -1033,6 +1039,38 @@ function normalizePath(p) {
     result.push(part);
   }
   return result.join('/');
+}
+
+// Resolve a markdown link href to a proper URL for the viewer.
+// Local .md files → #/view/<path>, images → /api/asset?path=, external → pass through.
+function resolveLinkHref(href, baseDir) {
+  if (!href) return '#';
+  // External URLs — pass through
+  if (/^https?:\/\//.test(href) || href.startsWith('data:')) return href;
+  // Mailto / other protocols — pass through
+  if (href.startsWith('mailto:') || href.startsWith('tel:')) return href;
+  // Strip fragment for resolution, re-add later
+  let fragment = '';
+  const hashIdx = href.indexOf('#');
+  if (hashIdx !== -1) {
+    fragment = href.slice(hashIdx);
+    href = href.slice(0, hashIdx);
+  }
+  if (!href) return fragment || '#';
+  // Resolve path
+  let resolved;
+  if (href.startsWith('/')) {
+    resolved = href.slice(1);
+  } else {
+    resolved = baseDir ? baseDir + '/' + href : href;
+  }
+  resolved = normalizePath(resolved);
+  // Images → asset endpoint
+  if (/\.(jpe?g|png|gif|webp|svg|bmp|ico|tiff?|avif)$/i.test(resolved)) {
+    return '/api/asset?path=' + encodeURIComponent(resolved) + fragment;
+  }
+  // Markdown / other text files → viewer
+  return '#/view/' + encodeURIComponent(resolved) + fragment;
 }
 
 function highlightCode(container) {
